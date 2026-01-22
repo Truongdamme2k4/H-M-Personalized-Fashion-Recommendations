@@ -1,0 +1,12 @@
+# Bỏ qua dữ liệu
+data/
+spark_temp/
+__pycache__/
+*.csv
+*.parquet
+*.zip
+
+# Bỏ qua file hệ thống
+.DS_Store
+.idea/
+.vscode/
