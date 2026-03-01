@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # ===============================
+  # 🚀 HADOOP MASTER (NAMENODE)
+  # ===============================
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+    volumes:
+      - namenode:/hadoop/dfs/name
+    ports:
+      - 9870:9870
+      - 9000:9000
+    networks:
+      - bigdata
+    tty: true
+
+  # ===============================
+  # 🟦 HADOOP WORKERS (DATANODE)
+  # ===============================
+  datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode1
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    volumes:
+      - datanode1:/hadoop/dfs/data
+    networks:
+      - bigdata
+    tty: true
+
+  datanode2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode2
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    volumes:
+      - datanode2:/hadoop/dfs/data
+    networks:
+      - bigdata
+    tty: true
+
+  # ===============================
+  # 🎛 SPARK MASTER
+  # ===============================
+  spark-master:
+    image: bitnami/spark:latest
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - 7077:7077
+      - 8080:8080
+    networks:
+      - bigdata
+    tty: true
+
+  # ===============================
+  # 🧰 SPARK WORKERS
+  # ===============================
+  spark-worker1:
+    image: bitnami/spark:latest
+    container_name: spark-worker1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    networks:
+      - bigdata
+    tty: true
+
+  spark-worker2:
+    image: bitnami/spark:latest
+    container_name: spark-worker2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    networks:
+      - bigdata
+    tty: true
+
+volumes:
+  namenode:
+  datanode1:
+  datanode2:
+
+networks:
+  bigdata:
+    driver: bridge

@@ -1,0 +1,60 @@
+version: "3.8"
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    hostname: namenode
+    environment:
+      - CLUSTER_NAME=hadoop
+    volumes:
+      - nn_data:/hadoop/dfs/name
+      - ./config:/etc/hadoop
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    networks:
+      - bigdata-net
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    environment:
+      - SERVICE_PRECONDITION=namenode:9000
+    volumes:
+      - dn_data:/hadoop/dfs/data
+      - ./config:/etc/hadoop
+    networks:
+      - bigdata-net
+    deploy:
+      mode: global
+
+  spark-master:
+    image: bitnami/spark:3.5
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    networks:
+      - bigdata-net
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+  spark-worker:
+    image: bitnami/spark:3.5
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    networks:
+      - bigdata-net
+    deploy:
+      mode: global
+
+networks:
+  bigdata-net:
+    external: true
+volumes:
+  nn_data:
+  dn_data:
