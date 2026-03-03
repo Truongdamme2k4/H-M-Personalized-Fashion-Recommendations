@@ -1,34 +1,32 @@
-# ==========================================
-# 1. THƯ MỤC DỮ LIỆU & MÔ HÌNH (TUYỆT ĐỐI KHÔNG PUSH)
-# ==========================================
-data/
-models/
-
-# ==========================================
-# 2. MÔI TRƯỜNG ẢO & CẤU HÌNH (VIRTUAL ENV)
-# ==========================================
-venv/
-env/
-.env
-
-# ==========================================
-# 3. FILE RÁC CỦA PYTHON & JUPYTER NOTEBOOK
-# ==========================================
+# --- 1. PYTHON ---
 __pycache__/
 *.py[cod]
 *$py.class
-.ipynb_checkpoints/
+*.so
+.Python
+env/
+venv/
+.env
 
-# ==========================================
-# 4. FILE TẠM CỦA SPARK & LOGS
-# ==========================================
-spark-warehouse/
+# --- 2. IDE & EDITOR ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- 3. BIG DATA & SPARK ---
 metastore_db/
 derby.log
-*.log
+spark-warehouse/
+checkpoint/
 
-# ==========================================
-# 5. FILE HỆ THỐNG (MAC OS / WINDOWS)
-# ==========================================
-.DS_Store
-Thumbs.db
+# --- 4. DỮ LIỆU (ĐÃ SỬA LỖI) ---
+# Thêm dấu / ở đầu để chỉ chặn folder data ở gốc, KHÔNG chặn src/data
+/data/
+
+# Giữ lại file .gitkeep nếu có
+!/data/.gitkeep
+
+# --- 5. JUPYTER ---
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
