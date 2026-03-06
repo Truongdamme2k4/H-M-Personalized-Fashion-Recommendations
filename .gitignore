@@ -1,12 +1,47 @@
-# Bỏ qua dữ liệu
-data/
-spark_temp/
+# --- 1. PYTHON ---
 __pycache__/
-*.csv
-*.parquet
-*.zip
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
 
-# Bỏ qua file hệ thống
-.DS_Store
+# --- 2. IDE & EDITOR ---
 .idea/
 .vscode/
+*.swp
+.DS_Store
+
+# --- 3. BIG DATA & SPARK ---
+metastore_db/
+derby.log
+spark-warehouse/
+checkpoint/
+
+# --- 4. DỮ LIỆU (QUAN TRỌNG) ---
+# Chặn toàn bộ thư mục data ở gốc (bao gồm raw, processed)
+/data/
+
+# Giữ lại file .gitkeep để Git vẫn nhận diện folder data (nếu cần)
+!/data/.gitkeep
+
+# --- 5. JUPYTER ---
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# --- 6. KẾT QUẢ CHẠY MODEL (BỔ SUNG) ---
+# Chặn thư mục chứa model đã train (Rất nặng, >100MB)
+models/saved/
+models/*.model
+
+# Chặn các file dữ liệu trung gian dạng Parquet
+*.parquet
+
+# Chặn file kết quả nộp bài (submission)
+submission.csv
+
+# --- 7. LOGS & SYSTEM ---
+*.log
+Thumbs.db
