@@ -1,162 +1,140 @@
-import pandas as pd
-import numpy as np
+import sys
 import os
-import json
-import logging
-from typing import Optional
+from pyspark.sql import SparkSession
+import pyspark.sql.functions as F
+from pyspark.sql.types import IntegerType, StringType
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-log = logging.getLogger(__name__)
+# ====================================================
+# 1. CẤU HÌNH MÔI TRƯỜNG & SPARK (SAFE MODE)
+# ====================================================
+os.environ['JAVA_HOME'] = r"C:\Program Files\Java\jre1.8.0_421"
+os.environ['HADOOP_HOME'] = r"C:\hadoop"
+os.environ['PYSPARK_PYTHON'] = sys.executable
+os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
 
-VALID_CLUB_STATUS = {"ACTIVE", "PRE-CREATE", "LEFT CLUB"}
-VALID_NEWS_FREQ   = {"Regularly", "Monthly", "None"}
-AGE_MIN, AGE_MAX  = 15, 100
+def process_customers_data(spark, input_path, mapping_path, output_path):
+    # ---------------------------------------------------------
+    # BƯỚC 1: ĐỌC DỮ LIỆU
+    # ---------------------------------------------------------
+    print(f"1️⃣ Đang đọc Customers từ: {input_path}")
+    df = spark.read.csv(input_path, header=True, inferSchema=True)
+    
+    # Xử lý ID trùng lặp (nếu có)
+    df = df.dropDuplicates(["customer_id"])
 
-CLUB_STATUS_MAP = {"ACTIVE": 0, "PRE-CREATE": 1, "LEFT CLUB": 2, "UNKNOWN": -1}
-NEWS_FREQ_MAP   = {"None": 0, "Monthly": 1, "Regularly": 2}
+    # ---------------------------------------------------------
+    # BƯỚC 2: JOIN VỚI MAPPING ĐỂ LẤY ID CHUẨN (Quan trọng nhất)
+    # ---------------------------------------------------------
+    print(f"2️⃣ Đang đọc Mapping từ: {mapping_path}")
+    if not os.path.exists(mapping_path):
+        print("❌ LỖI: Không tìm thấy file user_mapping.parquet!")
+        sys.exit()
+        
+    df_map = spark.read.parquet(mapping_path)
+    
+    # Inner Join: Chỉ giữ lại khách hàng ĐÃ TỪNG MUA HÀNG
+    # (Giúp loại bỏ khách hàng rác, giảm kích thước file)
+    df_joined = df.join(df_map, on="customer_id", how="inner")
+    
+    print("✅ Đã Map ID thành công. Bắt đầu làm sạch...")
 
+    # ---------------------------------------------------------
+    # BƯỚC 3: XỬ LÝ DỮ LIỆU (Logic giống hệt Pandas)
+    # ---------------------------------------------------------
+    
+    # 3.1. FN và Active: FillNA = 0
+    df_cleaned = df_joined.fillna({"FN": 0, "Active": 0})
 
-def _check_duplicates(df: pd.DataFrame) -> pd.DataFrame:
-    n_dup = df.duplicated(subset=["customer_id"]).sum()
-    if n_dup:
-        log.warning(f"Phát hiện {n_dup:,} customer_id trùng lặp → Xóa.")
-        df = df.drop_duplicates(subset=["customer_id"], keep="first")
-    return df
-
-
-def _validate(df: pd.DataFrame) -> None:
-    assert df.isnull().sum().sum() == 0, "Vẫn còn giá trị NaN sau xử lý!"
-    assert df["age"].between(AGE_MIN, AGE_MAX).all(), "Tuổi có giá trị ngoài bounds!"
-    assert df["club_member_status"].isin([-1, 0, 1, 2]).all(), "club_member_status có giá trị lạ!"
-    assert df["fashion_news_frequency"].isin([0, 1, 2]).all(), "fashion_news_frequency có giá trị lạ!"
-    assert df["FN"].isin([0, 1]).all(), "FN có giá trị ngoài {0, 1}!"
-    assert df["Active"].isin([0, 1]).all(), "Active có giá trị ngoài {0, 1}!"
-    log.info("Validation passed.")
-
-
-def process_customers(
-    input_path: Optional[str] = None,
-    output_dir: Optional[str] = None,
-) -> Optional[pd.DataFrame]:
-
-    # 1. ĐƯỜNG DẪN
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-
-    if input_path is None:
-        input_path = os.path.abspath(os.path.join(current_dir, "../../data/raw/customers.csv"))
-    if output_dir is None:
-        output_dir = os.path.abspath(os.path.join(current_dir, "../../data/processed"))
-
-    if not os.path.exists(input_path):
-        log.error(f"Không tìm thấy file tại: {input_path}")
-        return None
-
-    # 2. ĐỌC FILE
-    df = pd.read_csv(input_path, dtype={"customer_id": str})
-    initial_mem = df.memory_usage(deep=True).sum() / 1024**2
-    log.info(f"Đọc xong: {df.shape[0]:,} dòng × {df.shape[1]} cột | RAM: {initial_mem:.2f} MB")
-
-    # 3. KIỂM TRA CỘT BẮT BUỘC
-    required_cols = {"customer_id", "FN", "Active", "club_member_status",
-                     "fashion_news_frequency", "age", "postal_code"}
-    missing_cols = required_cols - set(df.columns)
-    if missing_cols:
-        log.error(f"Thiếu cột bắt buộc: {missing_cols}")
-        return None
-
-    # 4. DUPLICATE & VALIDATE customer_id
-    df = _check_duplicates(df)
-    df = df[df["customer_id"].notna()].copy()
-    df["customer_id"] = df["customer_id"].str.strip()
-    df = df[df["customer_id"] != ""].copy()
-
-    # 5. BINARY: FN, Active
-    #    Tạo flag missing trước — 65% null mang thông tin hành vi
-    for col in ["FN", "Active"]:
-        df[f"{col}_missing"] = df[col].isnull().astype(np.int8)
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-        df.loc[~df[col].isin([0.0, 1.0]), col] = np.nan
-        df[col] = df[col].fillna(0).astype(np.int8)
-
-    # 6. TUỔI — outlier → NaN, điền median theo nhóm club_member_status
-    df["age"] = pd.to_numeric(df["age"], errors="coerce")
-    df.loc[(df["age"] < AGE_MIN) | (df["age"] > AGE_MAX), "age"] = np.nan
-
-    df["age"] = (
-        df.groupby("club_member_status")["age"]
-        .transform(lambda x: x.fillna(x.median()))
+    # 3.2. Club Member Status -> Số hóa
+    # Logic: ACTIVE=0, PRE-CREATE=1, LEFT CLUB=2, UNKNOWN=-1
+    # Bước này dùng hàm when-otherwise (giống if-else)
+    
+    # Chuẩn hóa text trước (Trim + Upper)
+    df_cleaned = df_cleaned.withColumn("club_member_status", F.upper(F.trim(F.col("club_member_status"))))
+    
+    df_cleaned = df_cleaned.withColumn(
+        "club_status_index",
+        F.when(F.col("club_member_status") == "ACTIVE", 0)
+         .when(F.col("club_member_status") == "PRE-CREATE", 1)
+         .when(F.col("club_member_status") == "LEFT CLUB", 2)
+         .otherwise(-1) # Unknown
     )
-    # Fallback: nếu cả nhóm đều null thì điền median toàn bộ
-    global_median_age = df["age"].median()
-    df["age"] = df["age"].fillna(global_median_age).astype(np.int8)
 
-    # 7. club_member_status → Label Encoding
-    #    ACTIVE=0, PRE-CREATE=1, LEFT CLUB=2, UNKNOWN=-1
-    df["club_member_status"] = (
-        df["club_member_status"]
-        .astype(str).str.strip().str.upper()
-        .replace({"NAN": "UNKNOWN", "": "UNKNOWN"})
+    # 3.3. Fashion News Frequency -> Số hóa
+    # Logic: None=0, Monthly=1, Regularly=2
+    df_cleaned = df_cleaned.withColumn("fashion_news_frequency", F.upper(F.trim(F.col("fashion_news_frequency"))))
+    
+    df_cleaned = df_cleaned.withColumn(
+        "news_freq_index",
+        F.when(F.col("fashion_news_frequency").isin("NONE", "NO"), 0)
+         .when(F.col("fashion_news_frequency") == "MONTHLY", 1)
+         .when(F.col("fashion_news_frequency") == "REGULARLY", 2)
+         .otherwise(0) # Mặc định là None
     )
-    df.loc[
-        ~df["club_member_status"].isin(VALID_CLUB_STATUS | {"UNKNOWN"}),
-        "club_member_status"
-    ] = "UNKNOWN"
-    df["club_member_status"] = df["club_member_status"].map(CLUB_STATUS_MAP).astype(np.int8)
 
-    # 8. fashion_news_frequency → Label Encoding
-    #    None=0, Monthly=1, Regularly=2
-    df["fashion_news_frequency"] = (
-        df["fashion_news_frequency"]
-        .astype(str).str.strip()
-        .replace({"NONE": "None", "none": "None", "NO": "None", "nan": "None", "": "None"})
+    # 3.4. Xử lý Tuổi (Age)
+    # Cast sang số nguyên
+    df_cleaned = df_cleaned.withColumn("age", F.col("age").cast(IntegerType()))
+    
+    # Lọc nhiễu: Tuổi < 15 hoặc > 100 thì cho thành Null để điền lại
+    df_cleaned = df_cleaned.withColumn(
+        "age", 
+        F.when((F.col("age") < 15) | (F.col("age") > 100), None).otherwise(F.col("age"))
     )
-    df.loc[
-        ~df["fashion_news_frequency"].isin(VALID_NEWS_FREQ),
-        "fashion_news_frequency"
-    ] = "None"
-    df["fashion_news_frequency"] = df["fashion_news_frequency"].map(NEWS_FREQ_MAP).astype(np.int8)
 
-    # 9. XÓA postal_code (hash ẩn danh, không có giá trị cho model)
-    df.drop(columns=["postal_code"], inplace=True)
+    # Điền tuổi thiếu:
+    # Cách đơn giản & hiệu quả nhất cho Spark: Điền bằng Median toàn cục (Global Median)
+    # (Dùng Group Median trong Spark khá phức tạp và tốn RAM, Global Median là đủ tốt cho model rồi)
+    median_age = df_cleaned.approxQuantile("age", [0.5], 0.01)[0]
+    print(f"ℹ️ Tuổi trung vị (Median Age) là: {median_age}")
+    
+    df_cleaned = df_cleaned.fillna({"age": int(median_age)})
 
-    # 10. VALIDATION
-    _validate(df)
-
-    # 11. LƯU FILE + METADATA
-    os.makedirs(output_dir, exist_ok=True)
-
-    output_path = os.path.join(output_dir, "customers_cleaned.parquet")
-    df.to_parquet(output_path, index=False, engine="pyarrow", compression="snappy")
-
-    meta = {
-        "club_member_status":     CLUB_STATUS_MAP,
-        "fashion_news_frequency": NEWS_FREQ_MAP,
-        "age_bounds":             [AGE_MIN, AGE_MAX],
-        "global_median_age":      global_median_age,
-        "columns":                list(df.columns),
-        "n_rows":                 len(df),
-    }
-    meta_path = os.path.join(output_dir, "customers_meta.json")
-    with open(meta_path, "w") as f:
-        json.dump(meta, f, indent=2, ensure_ascii=False)
-
-    final_mem = df.memory_usage(deep=True).sum() / 1024**2
-    log.info(
-        f"Xong: {len(df):,} dòng | "
-        f"RAM: {initial_mem:.2f} MB → {final_mem:.2f} MB "
-        f"(↓{((initial_mem - final_mem) / initial_mem) * 100:.1f}%)"
-    )
-    log.info(f"💾 Data : {output_path}")
-    log.info(f"📋 Meta : {meta_path}")
-
-    print(df.head().to_string())
-
-    return df
-
+    # ---------------------------------------------------------
+    # BƯỚC 4: LỌC CỘT VÀ LƯU TRỮ
+    # ---------------------------------------------------------
+    print("4️⃣ Đang lưu file chuẩn...")
+    
+    # Chỉ chọn các cột số cần thiết cho Model
+    final_cols = [
+        "user_id_int",      # ID chuẩn (Key)
+        "age",              # Feature 1
+        "FN",               # Feature 2
+        "Active",           # Feature 3
+        "club_status_index",# Feature 4 (Đã mã hóa)
+        "news_freq_index"   # Feature 5 (Đã mã hóa)
+    ]
+    
+    df_final = df_cleaned.select(final_cols)
+    
+    # In kiểm tra
+    df_final.show(10)
+    
+    # Lưu Parquet
+    df_final.write.mode("overwrite").parquet(output_path)
+    print(f"🎉 Hoàn tất! File Customers chuẩn đã lưu tại: {output_path}")
 
 if __name__ == "__main__":
-    customers_cleaned = process_customers()
+    print("🚀 Đang khởi động Spark (Safe Mode 16GB)...")
+    spark = SparkSession.builder \
+        .appName("HM_Process_Customers_Spark") \
+        .master("local[*]") \
+        .config("spark.driver.memory", "5g") \
+        .config("spark.executor.memory", "5g") \
+        .config("spark.driver.maxResultSize", "2g") \
+        .config("spark.driver.bindAddress", "127.0.0.1") \
+        .config("spark.driver.host", "127.0.0.1") \
+        .getOrCreate()
+    
+    # Đường dẫn (Tự động nhận diện thư mục)
+    # Lưu ý: Chỉnh lại path nếu cấu trúc folder của bạn khác
+    INPUT_FILE = "./data/raw/customers.csv"
+    MAPPING_FILE = "./data/processed/user_mapping.parquet"
+    OUTPUT_FILE = "./data/processed/customers_processed.parquet"
+    
+    if os.path.exists(INPUT_FILE):
+        process_customers_data(spark, INPUT_FILE, MAPPING_FILE, OUTPUT_FILE)
+    else:
+        print(f"❌ Không tìm thấy file: {INPUT_FILE}")
+        
+    spark.stop()
