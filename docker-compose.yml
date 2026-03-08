@@ -16,4 +16,3 @@ services:
       - SYS_ADMIN
     environment:
       - ZEROTIER_ONE_NETWORK_IDS=154a350c86b1c5c7
-

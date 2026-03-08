@@ -1,43 +1,141 @@
-version: '3.8'
+version: "3.8"
 
 services:
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
-    volumes:
-      - ./config/core-site.xml:/etc/hadoop/core-site.xml
-      - ./config/hdfs-site.xml:/etc/hadoop/hdfs-site.xml
-      - ./namenode:/hadoop/dfs/name
+    hostname: namenode
     environment:
-      - CLUSTER_NAME=hadoop_cluster
-    networks:
-      hadoop_net:
-    deploy:
-      placement:
-        constraints:
-          - node.labels.type == leader
+      - CLUSTER_NAME=hadoop-cluster
+    env_file:
+      - ./config/hadoop.env
     ports:
       - "9870:9870"
       - "9000:9000"
-
-  datanode:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
     volumes:
-      - ./config/core-site.xml:/etc/hadoop/core-site.xml
-      - ./config/hdfs-site.xml:/etc/hadoop/hdfs-site.xml
-      - ./datanode:/hadoop/dfs/data
+      - namenode-data:/hadoop/dfs/name
     networks:
-      - hadoop_net
+      - bigdata_network
     deploy:
-      mode: replicated
       replicas: 1
       placement:
         constraints:
-          - node.labels.type == slave
+          - node.role == manager
 
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    env_file:
+      - ./config/hadoop.env
     ports:
-      - "9864:9864"
+      - target: 9864
+        published: 9864
+        mode: host
+    volumes:
+      - D:/data/hadoop/datanode:/hadoop/dfs/data
+    networks:
+      - bigdata_network
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == worker
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    hostname: resourcemanager
+    environment:
+      - SERVICE_PRECONDITION=namenode:9000 namenode:9870
+    env_file:
+      - ./config/hadoop.env
+    ports:
+      - "8088:8088"
+    networks:
+      - bigdata_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    environment:
+      - SERVICE_PRECONDITION=namenode:9000 namenode:9870 resourcemanager:8088
+    env_file:
+      - ./config/hadoop.env
+    networks:
+      - bigdata_network
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == worker
+
+  spark-master:
+    image: bde2020/spark-master:3.1.1-hadoop3.2
+    hostname: spark-master
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    env_file:
+      - ./config/hadoop.env
+    ports:
+      - "8080:8080"   
+      - "7077:7077"   
+    networks:
+      - bigdata_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  spark-worker:
+    image: bde2020/spark-worker:3.1.1-hadoop3.2
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+    env_file:
+      - ./config/hadoop.env
+    ports:
+      - target: 8081
+        published: 8081
+        mode: host
+    networks:
+      - bigdata_network
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == worker
+
+  spark-history-server:
+    image: bde2020/spark-history-server:3.1.1-hadoop3.2
+    hostname: spark-history-server
+    environment:
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=hdfs://namenode:9000/spark-logs
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    env_file:
+      - ./config/hadoop.env
+    ports:
+      - "18080:18080"  
+    networks:
+      - bigdata_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+    depends_on:
+      - namenode
 
 networks:
-  hadoop_net:
+  bigdata_network:
     driver: overlay
     attachable: true
+
+volumes:
+  namenode-data:
