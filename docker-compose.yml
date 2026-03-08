@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  zerotier:
+    image: zerotier/zerotier:latest
+    container_name: zerotier-one
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    network_mode: host
+    volumes:
+      - ./zerotier-data:/var/lib/zerotier-one
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    environment:
+      - ZEROTIER_ONE_NETWORK_IDS=154a350c86b1c5c7
