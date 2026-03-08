@@ -1,0 +1,32 @@
+# --- 1. PYTHON ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# --- 2. IDE & EDITOR ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- 3. BIG DATA & SPARK ---
+metastore_db/
+derby.log
+spark-warehouse/
+checkpoint/
+
+# --- 4. DỮ LIỆU (ĐÃ SỬA LỖI) ---
+# Thêm dấu / ở đầu để chỉ chặn folder data ở gốc, KHÔNG chặn src/data
+/data/
+
+# Giữ lại file .gitkeep nếu có
+!/data/.gitkeep
+
+# --- 5. JUPYTER ---
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
