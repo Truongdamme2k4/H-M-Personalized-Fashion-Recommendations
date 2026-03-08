@@ -1,0 +1,1 @@
+docker exec -it 0f46dde7b32c65b7f180edcf4131458dc603df28b86cac8359cdf594c2564fcb /spark/bin/spark-submit --master spark://spark-master:7077 /opt/spark-apps/wordcount.py

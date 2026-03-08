@@ -81,8 +81,11 @@ services:
     env_file:
       - ./config/hadoop.env
     ports:
-      - "8080:8080"   
-      - "7077:7077"   
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./apps:/opt/spark-apps
+      - ./config/spark-defaults.conf:/spark/conf/spark-defaults.conf
     networks:
       - bigdata_network
     deploy:
@@ -111,27 +114,6 @@ services:
       placement:
         constraints:
           - node.role == worker
-
-  spark-history-server:
-    image: bde2020/spark-history-server:3.1.1-hadoop3.2
-    hostname: spark-history-server
-    environment:
-      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=hdfs://namenode:9000/spark-logs
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
-    env_file:
-      - ./config/hadoop.env
-    ports:
-      - "18080:18080"  
-    networks:
-      - bigdata_network
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-    depends_on:
-      - namenode
-
 networks:
   bigdata_network:
     driver: overlay
@@ -139,3 +121,4 @@ networks:
 
 volumes:
   namenode-data:
+  datanode-data:
