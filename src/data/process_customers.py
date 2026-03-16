@@ -2,7 +2,7 @@ import sys
 import os
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
-from pyspark.sql.types import IntegerType, StringType
+from pyspark.sql.types import IntegerType
 
 # ====================================================
 # 1. CẤU HÌNH MÔI TRƯỜNG & SPARK (SAFE MODE)
@@ -12,46 +12,38 @@ os.environ['HADOOP_HOME'] = r"C:\hadoop"
 os.environ['PYSPARK_PYTHON'] = sys.executable
 os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
 
-def process_customers_data(spark, input_path, mapping_path, output_path):
+def process_customers_data(spark, input_path, trans_path, output_path):
     # ---------------------------------------------------------
     # BƯỚC 1: ĐỌC DỮ LIỆU
     # ---------------------------------------------------------
     print(f"1️⃣ Đang đọc Customers từ: {input_path}")
-    df = spark.read.csv(input_path, header=True, inferSchema=True)
-    
-    # Xử lý ID trùng lặp (nếu có)
-    df = df.dropDuplicates(["customer_id"])
+    df = spark.read.csv(input_path, header=True, inferSchema=True).dropDuplicates(["customer_id"])
 
     # ---------------------------------------------------------
-    # BƯỚC 2: JOIN VỚI MAPPING ĐỂ LẤY ID CHUẨN (Quan trọng nhất)
+    # BƯỚC 2: LỌC KHÁCH HÀNG TỪ TRANSACTIONS (MỚI)
     # ---------------------------------------------------------
-    print(f"2️⃣ Đang đọc Mapping từ: {mapping_path}")
-    if not os.path.exists(mapping_path):
-        print("❌ LỖI: Không tìm thấy file user_mapping.parquet!")
+    print(f"2️⃣ Đang lọc khách hàng có giao dịch từ: {trans_path}")
+    if not os.path.exists(trans_path):
+        print("❌ LỖI: Không tìm thấy cleaned_transactions.parquet! Hãy chạy file tiền xử lý Transactions trước.")
         sys.exit()
         
-    df_map = spark.read.parquet(mapping_path)
+    # Chỉ lấy những ID khách hàng đã thực sự mua đồ (để giảm dung lượng)
+    df_trans_users = spark.read.parquet(trans_path).select("customer_id").distinct()
     
-    # Inner Join: Chỉ giữ lại khách hàng ĐÃ TỪNG MUA HÀNG
-    # (Giúp loại bỏ khách hàng rác, giảm kích thước file)
-    df_joined = df.join(df_map, on="customer_id", how="inner")
+    # Inner Join: Giữ lại khách hàng hợp lệ
+    df_joined = df.join(df_trans_users, on="customer_id", how="inner")
     
-    print("✅ Đã Map ID thành công. Bắt đầu làm sạch...")
+    print("✅ Đã lọc xong khách hàng hợp lệ. Bắt đầu làm sạch...")
 
     # ---------------------------------------------------------
-    # BƯỚC 3: XỬ LÝ DỮ LIỆU (Logic giống hệt Pandas)
+    # BƯỚC 3: XỬ LÝ DỮ LIỆU CHI TIẾT
     # ---------------------------------------------------------
     
     # 3.1. FN và Active: FillNA = 0
     df_cleaned = df_joined.fillna({"FN": 0, "Active": 0})
 
     # 3.2. Club Member Status -> Số hóa
-    # Logic: ACTIVE=0, PRE-CREATE=1, LEFT CLUB=2, UNKNOWN=-1
-    # Bước này dùng hàm when-otherwise (giống if-else)
-    
-    # Chuẩn hóa text trước (Trim + Upper)
     df_cleaned = df_cleaned.withColumn("club_member_status", F.upper(F.trim(F.col("club_member_status"))))
-    
     df_cleaned = df_cleaned.withColumn(
         "club_status_index",
         F.when(F.col("club_member_status") == "ACTIVE", 0)
@@ -61,9 +53,7 @@ def process_customers_data(spark, input_path, mapping_path, output_path):
     )
 
     # 3.3. Fashion News Frequency -> Số hóa
-    # Logic: None=0, Monthly=1, Regularly=2
     df_cleaned = df_cleaned.withColumn("fashion_news_frequency", F.upper(F.trim(F.col("fashion_news_frequency"))))
-    
     df_cleaned = df_cleaned.withColumn(
         "news_freq_index",
         F.when(F.col("fashion_news_frequency").isin("NONE", "NO"), 0)
@@ -73,20 +63,17 @@ def process_customers_data(spark, input_path, mapping_path, output_path):
     )
 
     # 3.4. Xử lý Tuổi (Age)
-    # Cast sang số nguyên
     df_cleaned = df_cleaned.withColumn("age", F.col("age").cast(IntegerType()))
     
-    # Lọc nhiễu: Tuổi < 15 hoặc > 100 thì cho thành Null để điền lại
+    # Lọc nhiễu: Tuổi < 15 hoặc > 100 thì cho thành Null
     df_cleaned = df_cleaned.withColumn(
         "age", 
         F.when((F.col("age") < 15) | (F.col("age") > 100), None).otherwise(F.col("age"))
     )
 
-    # Điền tuổi thiếu:
-    # Cách đơn giản & hiệu quả nhất cho Spark: Điền bằng Median toàn cục (Global Median)
-    # (Dùng Group Median trong Spark khá phức tạp và tốn RAM, Global Median là đủ tốt cho model rồi)
+    # Điền tuổi thiếu bằng Median toàn cục
     median_age = df_cleaned.approxQuantile("age", [0.5], 0.01)[0]
-    print(f"ℹ️ Tuổi trung vị (Median Age) là: {median_age}")
+    print(f"ℹ️ Tuổi trung vị (Median Age) dùng để fill: {int(median_age)}")
     
     df_cleaned = df_cleaned.fillna({"age": int(median_age)})
 
@@ -95,45 +82,43 @@ def process_customers_data(spark, input_path, mapping_path, output_path):
     # ---------------------------------------------------------
     print("4️⃣ Đang lưu file chuẩn...")
     
-    # Chỉ chọn các cột số cần thiết cho Model
+    # SỬA CHỮA QUAN TRỌNG: Giữ nguyên customer_id (Dạng String)
     final_cols = [
-        "user_id_int",      # ID chuẩn (Key)
-        "age",              # Feature 1
-        "FN",               # Feature 2
-        "Active",           # Feature 3
-        "club_status_index",# Feature 4 (Đã mã hóa)
-        "news_freq_index"   # Feature 5 (Đã mã hóa)
+        "customer_id",      # Key kết nối
+        "age",              # Để filter độ tuổi (GenZ, Millenial)
+        "FN", 
+        "Active", 
+        "club_status_index",
+        "news_freq_index" 
     ]
     
     df_final = df_cleaned.select(final_cols)
-    
-    # In kiểm tra
-    df_final.show(10)
+    df_final.show(5)
     
     # Lưu Parquet
     df_final.write.mode("overwrite").parquet(output_path)
     print(f"🎉 Hoàn tất! File Customers chuẩn đã lưu tại: {output_path}")
 
 if __name__ == "__main__":
-    print("🚀 Đang khởi động Spark (Safe Mode 16GB)...")
+    print("🚀 Đang khởi động Spark (Safe Mode 5GB)...")
     spark = SparkSession.builder \
-        .appName("HM_Process_Customers_Spark") \
+        .appName("HM_Process_Customers_Multimodal") \
         .master("local[*]") \
         .config("spark.driver.memory", "5g") \
         .config("spark.executor.memory", "5g") \
-        .config("spark.driver.maxResultSize", "2g") \
         .config("spark.driver.bindAddress", "127.0.0.1") \
         .config("spark.driver.host", "127.0.0.1") \
         .getOrCreate()
     
-    # Đường dẫn (Tự động nhận diện thư mục)
-    # Lưu ý: Chỉnh lại path nếu cấu trúc folder của bạn khác
+    spark.sparkContext.setLogLevel("ERROR")
+    
     INPUT_FILE = "./data/raw/customers.csv"
-    MAPPING_FILE = "./data/processed/user_mapping.parquet"
+    # Lấy danh sách giao dịch vừa chạy xong ở file trước
+    TRANS_FILE = "./data/processed/cleaned_transactions.parquet"
     OUTPUT_FILE = "./data/processed/customers_processed.parquet"
     
     if os.path.exists(INPUT_FILE):
-        process_customers_data(spark, INPUT_FILE, MAPPING_FILE, OUTPUT_FILE)
+        process_customers_data(spark, INPUT_FILE, TRANS_FILE, OUTPUT_FILE)
     else:
         print(f"❌ Không tìm thấy file: {INPUT_FILE}")
         
