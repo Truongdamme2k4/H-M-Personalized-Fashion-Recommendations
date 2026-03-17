@@ -114,6 +114,20 @@ services:
       placement:
         constraints:
           - node.role == worker
+  hue:
+    image: gethue/hue:latest
+    hostname: hue
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./config/hue.ini:/usr/share/hue/desktop/conf/hue.ini
+    networks:
+      - bigdata_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
 networks:
   bigdata_network:
     driver: overlay
