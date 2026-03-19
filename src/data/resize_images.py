@@ -7,7 +7,7 @@ import time
 # ====================================================
 # 1. CẤU HÌNH ĐƯỜNG DẪN & KÍCH THƯỚC
 # ====================================================
-# Thư mục chứa 105k ảnh gốc (H&M thường chia thành các folder con 01, 02...)
+# Thư mục chứa 105k ảnh gốc (H&M thường chia thành các folder con 010, 011...)
 INPUT_DIR = "./data/raw/images" 
 # Thư mục chứa ảnh sau khi đã ép size
 OUTPUT_DIR = "./data/processed/images_resized" 
@@ -40,7 +40,7 @@ def process_image(img_path):
         print(f"❌ Lỗi ở ảnh {filename}: {str(e)}")
         return False
 
-def main(test_mode=True):
+def main():
     # Tạo thư mục đầu ra nếu chưa có
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -54,14 +54,10 @@ def main(test_mode=True):
         return
 
     # ---------------------------------------------------------
-    # CHẾ ĐỘ CHẠY (TEST / FULL)
+    # CHẾ ĐỘ CHẠY FULL
     # ---------------------------------------------------------
-    if test_mode:
-        all_images = all_images[:100] # CHỈ LẤY 100 ẢNH ĐỂ TEST
-        print(f"🛠️ [CHẾ ĐỘ TEST]: Bắt đầu ép size {len(all_images)} ảnh...")
-    else:
-        print(f"🚀 [CHẾ ĐỘ FULL]: Bắt đầu ép size TOÀN BỘ {len(all_images)} ảnh...")
-        print("☕ Đi pha ly cà phê đi, việc này sẽ tốn chút thời gian đấy!")
+    print(f"🚀 [CHẾ ĐỘ FULL]: Bắt đầu ép size TOÀN BỘ {total_found} ảnh...")
+    print("☕ Máy sẽ chạy 100% công suất CPU. Bạn có thể đi pha ly cà phê chờ đợi nhé!")
 
     start_time = time.time()
     success_count = 0
@@ -81,11 +77,10 @@ def main(test_mode=True):
     
     print("\n" + "="*50)
     print(f"🎉 HOÀN TẤT!")
-    print(f"✅ Đã xử lý thành công: {success_count} / {len(all_images)} ảnh")
+    print(f"✅ Đã xử lý thành công: {success_count} / {total_found} ảnh")
     print(f"⏱️ Tổng thời gian chạy: {minutes:.2f} phút")
     print("="*50)
 
 if __name__ == "__main__":
-    # BƯỚC 1: ĐỂ True ĐỂ CHẠY THỬ 100 ẢNH.
-    # BƯỚC 2: SAU KHI THẤY THƯ MỤC OUTPUT CÓ 100 ẢNH 224x224 XINH ĐẸP, ĐỔI THÀNH False ĐỂ CHẠY HẾT 105.000 ẢNH.
-    main(test_mode=True)
+    # Kích hoạt chạy full trực tiếp
+    main()
