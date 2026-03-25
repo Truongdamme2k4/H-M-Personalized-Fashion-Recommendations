@@ -5,7 +5,7 @@ docker exec -it zerotier-one zerotier-cli join 154a350c86b1c5c7
 docker swarm init --advertise-addr 10.229.91.65
 
 # Tạo overlay network để các container trên nhiều node khác nhau có thể giao tiếp
-docker network create --driver overlay --attachable bigdata_network
+docker network create --driver overlay --opt com.docker.network.driver.mtu=1280 --attachable bigdata_network
 
 # Worker node tham gia vào cluster Docker Swarm bằng token
    docker swarm join --token SWMTKN-1-02hcs2ol7ls24z94b4l088yi32pqomek73em3j7azi344b75ap-d5xt8glyhwr8l1o9cu4lryykh 10.229.91.65:2377
@@ -26,10 +26,73 @@ docker pull bde2020/spark-master:3.1.1-hadoop3.2
 docker pull bde2020/spark-worker:3.1.1-hadoop3.2
 docker pull bde2020/spark-history-server:3.1.1-hadoop3.2
 
+docker build -t jupyter-spark:3.1.1 -f docker-file.jupyter .
 
-docker exec -it a9e8df6f6b6cb48477f0d5e74e57c8ac30aa92b9a49e126e04f7564c659bf32a hdfs dfs -mkdir -p /input
-docker cp ./part-00000-f9d2db6d-69c2-4b6b-93f9-7ed91b828f70-c000.csv a9e8df6f6b6cb48477f0d5e74e57c8ac30aa92b9a49e126e04f7564c659bf32a:/tmp/file.csv
-docker exec -it a9e8df6f6b6cb48477f0d5e74e57c8ac30aa92b9a49e126e04f7564c659bf32a hdfs dfs -put /tmp/file.csv /input/
+# hadoop resource
+http://10.229.91.65:9870/
 
-docker exec -it a9e8df6f6b6cb48477f0d5e74e57c8ac30aa92b9a49e126e04f7564c659bf32a hdfs dfs -get /output/wordcount /tmp/wordcount
-docker cp a9e8df6f6b6cb48477f0d5e74e57c8ac30aa92b9a49e126e04f7564c659bf32a:/tmp/wordcount D:\wordcount
+## hdfs ui
+http://10.229.91.65:8888
+
+# jupyter
+http://10.229.91.65:8889
+
+
+
+docker cp "C:\Users\TUAN ANH\Downloads\transactions_train.csv" 884f719efc223be8e6a4f8f260549ed8dbb2e8a90bda04c78bb5f421d992c7e3:/tmp/transactions_train.csv
+
+docker exec -it 884f719efc223be8e6a4f8f260549ed8dbb2e8a90bda04c78bb5f421d992c7e3 bash
+
+hdfs dfs -put /tmp/transactions_train.csv /data/raw/
+
+hdfs dfs -ls /data/raw/
+
+
+#!/bin/bash
+
+# 1. Khai báo biến
+SOURCE_FILE="/tmp/transactions_train.csv"
+# Thêm /transactions vào cuối đường dẫn
+DEST_DIR="/data/raw/transactions"
+PART_PREFIX="/tmp/trans_part_"
+BLOCK_SIZE="100M"
+
+echo "--- BẮT ĐẦU QUY TRÌNH ---"
+
+# 2. Tạo thư mục đích trên HDFS nếu chưa có
+# Lệnh -p giúp tạo cả thư mục cha nếu chưa tồn tại
+hdfs dfs -mkdir -p $DEST_DIR
+
+# 3. Thoát Safe Mode (đề phòng trường hợp Hadoop vừa khởi động)
+hdfs dfsadmin -safemode leave
+
+# 4. Xóa các file cũ trong thư mục transactions để tránh xung đột
+hdfs dfs -rm -r $DEST_DIR/trans_part_* 2>/dev/null
+rm -f ${PART_PREFIX}*
+
+# 5. Chia nhỏ file
+echo "Đang chia nhỏ file $SOURCE_FILE thành các phần $BLOCK_SIZE..."
+split -b $BLOCK_SIZE $SOURCE_FILE $PART_PREFIX -d -a 2
+
+# 6. Vòng lặp đẩy từng file lên HDFS
+for file in ${PART_PREFIX}*; do
+    filename=$(basename $file)
+    echo "---------------------------------------"
+    echo "Đang đẩy $filename lên $DEST_DIR..."
+    
+    # Tham số tối ưu cho mạng ZeroTier
+    hdfs dfs -D dfs.client.socket-timeout=180000 \
+             -D dfs.client.write.bandwidthPerSec=5242880 \
+             -put "$file" "$DEST_DIR/"
+    
+    if [ $? -eq 0 ]; then
+        echo "=> THÀNH CÔNG: $filename"
+        rm -f "$file"
+    else
+        echo "=> THẤT BẠI: $filename. Dừng quy trình!"
+        exit 1
+    fi
+done
+
+echo "--- HOÀN THÀNH ---"
+hdfs dfs -ls $DEST_DIR

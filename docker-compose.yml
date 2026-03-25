@@ -4,7 +4,7 @@ services:
   zerotier:
     image: zerotier/zerotier:latest
     container_name: zerotier-one
-    restart: unless-stopped
+    restart: always  
     privileged: true
     devices:
       - /dev/net/tun:/dev/net/tun
@@ -14,5 +14,10 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN
-    environment:
-      - ZEROTIER_ONE_NETWORK_IDS=154a350c86b1c5c7
+    entrypoint: >
+      sh -c "
+      zerotier-one & 
+      sleep 5; 
+      zerotier-cli join 154a350c86b1c5c7; 
+      tail -f /var/lib/zerotier-one/zerotier-one.pid
+      "

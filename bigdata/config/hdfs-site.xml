@@ -13,13 +13,11 @@
     <value>/hadoop/dfs/data</value>
   </property>
 
-  <!-- BẮT BUỘC: Enable WebHDFS -->
   <property>
     <name>dfs.webhdfs.enabled</name>
     <value>true</value>
   </property>
 
-  <!-- FIX CHÍNH: Browser redirect đến hostname thay vì IP nội bộ container -->
   <property>
     <name>dfs.client.use.datanode.hostname</name>
     <value>true</value>
@@ -28,7 +26,6 @@
     <name>dfs.datanode.use.datanode.hostname</name>
     <value>true</value>
   </property>
-
   <!-- Tắt check IP khi datanode register -->
   <property>
     <name>dfs.namenode.datanode.registration.ip-hostname-check</name>
@@ -40,4 +37,26 @@
     <name>dfs.permissions.enabled</name>
     <value>false</value>
   </property>
+  <property>
+  <name>dfs.stream-buffer-size</name>
+  <value>131072</value>
+</property>
+
+<!-- Tăng handler count -->
+<property>
+  <name>dfs.datanode.handler.count</name>
+  <value>20</value>
+</property>
+
+<property>
+  <name>dfs.namenode.handler.count</name>
+  <value>20</value>
+</property>
+<property>
+  <name>dfs.client.socket-timeout</name>
+  <value>180000</value> </property>
+<property>
+  <name>dfs.datanode.socket.write.timeout</name>
+  <value>180000</value>
+</property>
 </configuration>

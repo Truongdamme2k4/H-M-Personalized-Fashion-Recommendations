@@ -32,7 +32,7 @@ services:
         published: 9864
         mode: host
     volumes:
-      - D:/data/hadoop/datanode:/hadoop/dfs/data
+      - datanode-data:/hadoop/dfs/data
     networks:
       - bigdata_network
     deploy:
@@ -40,6 +40,7 @@ services:
       placement:
         constraints:
           - node.role == worker
+
 
   resourcemanager:
     image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
@@ -99,8 +100,8 @@ services:
     environment:
       - SPARK_MASTER=spark://spark-master:7077
       - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
-      - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_CORES=4
+      - SPARK_WORKER_MEMORY=4g
     env_file:
       - ./config/hadoop.env
     ports:
@@ -128,10 +129,38 @@ services:
       placement:
         constraints:
           - node.role == manager
+  jupyter:
+    image: jupyter-spark:3.1.1
+    hostname: jupyter
+    user: root
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - GRANT_SUDO=yes
+      - PYSPARK_PYTHON=python3
+      - PYSPARK_DRIVER_PYTHON=python3
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - JUPYTER_TOKEN=""
+    command: >
+      start-notebook.sh 
+      --NotebookApp.token='' 
+      --NotebookApp.password=''
+    ports:
+      - "8889:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    networks:
+      - bigdata_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
 networks:
   bigdata_network:
     driver: overlay
     attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: "1280"
 
 volumes:
   namenode-data:
