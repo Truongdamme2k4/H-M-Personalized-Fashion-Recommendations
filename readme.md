@@ -5,7 +5,7 @@ docker exec -it zerotier-one zerotier-cli join 154a350c86b1c5c7
 docker swarm init --advertise-addr 10.229.91.65
 
 # Tạo overlay network để các container trên nhiều node khác nhau có thể giao tiếp
-docker network create --driver overlay --opt com.docker.network.driver.mtu=1280 --attachable bigdata_network
+docker network create --driver overlay --opt com.docker.network.driver.mtu=1500 --attachable bigdata_network
 
 # Worker node tham gia vào cluster Docker Swarm bằng token
    docker swarm join --token SWMTKN-1-02hcs2ol7ls24z94b4l088yi32pqomek73em3j7azi344b75ap-d5xt8glyhwr8l1o9cu4lryykh 10.229.91.65:2377
@@ -39,9 +39,9 @@ http://10.229.91.65:8889
 
 
 
-docker cp "C:\Users\TUAN ANH\Downloads\transactions_train.csv" 884f719efc223be8e6a4f8f260549ed8dbb2e8a90bda04c78bb5f421d992c7e3:/tmp/transactions_train.csv
+docker cp "C:\Users\TUAN ANH\Downloads\transactions_train.csv" 27af52f3964a5e63383ebc3f7dbe6c2bedcdf434bc27eea03329d9fe51d85458:/tmp/transactions_train.csv
 
-docker exec -it 884f719efc223be8e6a4f8f260549ed8dbb2e8a90bda04c78bb5f421d992c7e3 bash
+docker exec -it 27af52f3964a5e63383ebc3f7dbe6c2bedcdf434bc27eea03329d9fe51d85458 bash
 
 hdfs dfs -put /tmp/transactions_train.csv /data/raw/
 
