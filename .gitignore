@@ -36,8 +36,6 @@ checkpoint/
 models/saved/
 models/*.model
 
-# Chặn các file dữ liệu trung gian dạng Parquet
-*.parquet
 
 # Chặn file kết quả nộp bài (submission)
 submission.csv
