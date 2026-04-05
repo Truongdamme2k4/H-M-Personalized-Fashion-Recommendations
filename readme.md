@@ -27,6 +27,7 @@ docker pull bde2020/spark-worker:3.1.1-hadoop3.2
 docker pull bde2020/spark-history-server:3.1.1-hadoop3.2
 
 docker build -t jupyter-spark:3.1.1 -f docker-file.jupyter .
+docker build -t airflow-spark:2.6.3 -f docker-file.airflow .
 
 # hadoop resource
 http://10.229.91.65:9870/
