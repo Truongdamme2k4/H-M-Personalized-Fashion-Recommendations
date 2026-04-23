@@ -7,8 +7,13 @@ import {
   Box,
   Stack,
   ActionIcon,
+  Tooltip,
 } from '@mantine/core'
-import { IconHeart, IconShoppingBagPlus } from '@tabler/icons-react'
+import {
+  IconHeart,
+  IconShoppingBagPlus,
+  IconSparkles,
+} from '@tabler/icons-react'
 import type { Product } from '../types'
 
 interface Props {
@@ -101,6 +106,35 @@ export function ProductCard({ product, onOpen, onAdd, compact }: Props) {
       </AspectRatio>
 
       <Stack gap={2} p={compact ? 'xs' : 'sm'} pt={compact ? 8 : 12}>
+        {product.reason && (
+          <Tooltip label={product.reason} multiline w={260} withArrow>
+            <Group
+              gap={4}
+              wrap="nowrap"
+              style={{
+                background: 'var(--yellow-soft)',
+                border: '1px solid #000',
+                padding: '2px 6px',
+                marginBottom: 4,
+                width: 'fit-content',
+                maxWidth: '100%',
+              }}
+            >
+              <IconSparkles size={10} stroke={2} />
+              <Text
+                size="10px"
+                lineClamp={1}
+                style={{
+                  color: '#000',
+                  fontWeight: 600,
+                  letterSpacing: 0.3,
+                }}
+              >
+                {product.reason}
+              </Text>
+            </Group>
+          </Tooltip>
+        )}
         <Text
           size="xs"
           tt="uppercase"

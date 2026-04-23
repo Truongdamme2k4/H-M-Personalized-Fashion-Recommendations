@@ -6,6 +6,7 @@ export interface Product {
   imageFolder?: string
   imageUrl?: string
   missing?: boolean
+  reason?: string
 }
 
 export interface HomeResponse {

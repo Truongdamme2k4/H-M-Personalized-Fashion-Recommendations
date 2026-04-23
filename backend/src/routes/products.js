@@ -10,13 +10,20 @@ router.get('/:id', (req, res) => {
 });
 
 router.get('/:id/similar', (req, res) => {
-  const similar = getSimilar(req.params.id);
+  const { id } = req.params;
+  const similar = getSimilar(id);
   if (similar === undefined) {
     return res.status(404).json({ error: 'Product not found' });
   }
+  const src = getArticle(id);
+  const srcLabel = src?.name || id;
+  const srcType = src?.type;
+  const reason = srcType
+    ? `Tương tự "${srcLabel}" · cùng ${srcType}`
+    : `Tương tự "${srcLabel}"`;
   res.json({
-    id: req.params.id,
-    items: hydrate(similar.slice(0, 6)),
+    id,
+    items: hydrate(similar.slice(0, 6)).map((p) => ({ ...p, reason })),
   });
 });
 

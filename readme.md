@@ -97,3 +97,52 @@ done
 
 echo "--- HOÀN THÀNH ---"
 hdfs dfs -ls $DEST_DIR
+
+
+---
+
+# Chạy Demo App (Backend + Frontend)
+
+Ứng dụng demo gợi ý sản phẩm gồm 2 service: `backend` (Node.js/Express) và `frontend` (React + Vite).
+
+## Yêu cầu
+- Node.js >= 18
+- Các file dữ liệu ở thư mục gốc repo: `article_metadata.csv`, `final_recommendations.csv`, `cart_recommendations.json`, `similar_products.json`, `global_trending.json`
+
+## Cài đặt dependencies (chạy 1 lần)
+```bash
+cd backend && npm install
+cd ../frontend && npm install
+```
+
+## Cấu hình backend
+File `backend/.env` đã có sẵn. Các biến chính:
+```
+PORT=4000
+DATA_DIR=../
+CORS_ORIGIN=http://localhost:5173
+IMAGE_TEMPLATE=         # để trống → dùng placeholder theo category (placehold.co)
+```
+
+## Chạy backend (Terminal 1)
+```bash
+cd backend
+npm run dev
+```
+Backend chạy tại `http://localhost:4000`. Health check: `http://localhost:4000/health`.
+
+## Chạy frontend (Terminal 2)
+```bash
+cd frontend
+npm run dev
+```
+Mở `http://localhost:5173` trong trình duyệt.
+
+## Các tính năng
+- **Feature 1 · Homepage**: nhập `customer_id` → hiển thị 12 sản phẩm cá nhân hoá (có fallback `global_trending` nếu không tồn tại).
+- **Feature 2 · Cart · Cross-sell**: thêm sản phẩm vào giỏ → gợi ý 6 món "thường mua cùng".
+- **Feature 3 · Up-sell · Similar**: nhập `article_id` (hoặc click một sản phẩm) → hiển thị 6 sản phẩm tương tự.
+
+## Dừng services
+- Ctrl+C ở cả 2 terminal.
+- Nếu port 4000 bị giữ: `netstat -ano | grep :4000` rồi `taskkill //F //PID <pid>`.
