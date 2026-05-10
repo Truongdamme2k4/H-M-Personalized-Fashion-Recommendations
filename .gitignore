@@ -20,13 +20,28 @@ derby.log
 spark-warehouse/
 checkpoint/
 
-# --- 4. DỮ LIỆU (ĐÃ SỬA LỖI) ---
-# Thêm dấu / ở đầu để chỉ chặn folder data ở gốc, KHÔNG chặn src/data
+# --- 4. DỮ LIỆU (QUAN TRỌNG) ---
+# Chặn toàn bộ thư mục data ở gốc (bao gồm raw, processed)
 /data/
 
-# Giữ lại file .gitkeep nếu có
+# Giữ lại file .gitkeep để Git vẫn nhận diện folder data (nếu cần)
 !/data/.gitkeep
 
 # --- 5. JUPYTER ---
 .ipynb_checkpoints/
 */.ipynb_checkpoints/
+
+# --- 6. KẾT QUẢ CHẠY MODEL (BỔ SUNG) ---
+# Chặn thư mục chứa model đã train (Rất nặng, >100MB)
+models/saved/
+models/*.model
+
+# Chặn các file dữ liệu trung gian dạng Parquet
+*.parquet
+
+# Chặn file kết quả nộp bài (submission)
+submission.csv
+
+# --- 7. LOGS & SYSTEM ---
+*.log
+Thumbs.db
