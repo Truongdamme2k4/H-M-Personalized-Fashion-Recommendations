@@ -36,3 +36,8 @@ Thumbs.db
 node_modules
 
 backend/data_cache/
+cart_recommendations.json
+article_metadata.csv
+final_recommendations.csv
+similar_products.json
+global_trending.json
