@@ -16,3 +16,10 @@ services:
       - SYS_ADMIN
     environment:
       - ZEROTIER_ONE_NETWORK_IDS=154a350c86b1c5c7
+    entrypoint: >
+      sh -c "
+      zerotier-one &
+      sleep 5;
+      zerotier-cli join 154a350c86b1c5c7;
+      tail -f /var/lib/zerotier-one/zerotier-one.pid
+      "

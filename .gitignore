@@ -1,43 +1,88 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+build/
+.next/
+out/
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
+*.egg-info/
+.venv/
 venv/
-.env
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Airflow
+bigdata/logs/
+bigdata/dags/__pycache__/
+airflow.db
+airflow-webserver.pid
+standalone_admin_password.txt
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# IDE / Editor
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
 .DS_Store
+Thumbs.db
+desktop.ini
 
-metastore_db/
-derby.log
-spark-warehouse/
-checkpoint/
+# Claude Code local config
+.claude/
 
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Data cache / outputs (large, regenerable)
+backend/data_cache/
+*.log
+
+# Generated recommendation / trending data files (regenerable from pipeline)
+cart_recommendations.json
+final_recommendations.json
+final_recommendations.csv
+global_trending.json
+similar_products.json
+article_metadata.csv
+
+# Local data
 /data/
-
 !/data/.gitkeep
 
-.ipynb_checkpoints/
-*/.ipynb_checkpoints/
+# Zerotier
+zerotier-data/
 
+# Models
 models/saved/
 models/*.model
 
+# Misc
 *.parquet
-
 submission.csv
-
-*.log
-Thumbs.db
-node_modules
-
-backend/data_cache/
-cart_recommendations.json
-article_metadata.csv
-final_recommendations.csv
-similar_products.json
-global_trending.json
