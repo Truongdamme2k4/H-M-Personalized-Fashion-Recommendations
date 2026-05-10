@@ -150,8 +150,8 @@ def process_customers(
         f"RAM: {initial_mem:.2f} MB → {final_mem:.2f} MB "
         f"(↓{((initial_mem - final_mem) / initial_mem) * 100:.1f}%)"
     )
-    log.info(f"💾 Data : {output_path}")
-    log.info(f"📋 Meta : {meta_path}")
+    log.info(f"Data : {output_path}")
+    log.info(f"Meta : {meta_path}")
 
     print(df.head().to_string())
 
