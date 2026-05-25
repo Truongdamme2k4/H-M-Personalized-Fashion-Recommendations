@@ -201,7 +201,24 @@ services:
       placement:
         constraints:
           - node.role == manager
-  
+
+  mongodb:
+    image: mongo:6.0
+    hostname: mongodb
+    environment:
+      - MONGO_INITDB_DATABASE=hm_recsys
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - bigdata_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
 networks:
   bigdata_network:
     driver: overlay
@@ -212,5 +229,5 @@ networks:
 volumes:
   namenode-data:
   datanode-data:
-  # mongo-data:
+  mongo-data:
   postgres-data:

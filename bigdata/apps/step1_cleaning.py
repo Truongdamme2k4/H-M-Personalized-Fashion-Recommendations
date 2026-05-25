@@ -12,6 +12,7 @@ Output: /data/cleaned/transactions/
         /data/cleaned/customers/
 """
 
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
@@ -36,7 +37,7 @@ print("=" * 60)
 # ============================================================
 # 2. Đọc raw data từ HDFS
 # ============================================================
-HDFS_BASE = "hdfs://namenode:9000"
+HDFS_BASE = os.environ.get("HDFS_BASE", "hdfs://namenode:9000")
 
 # --- Transactions (31M rows) ---
 print("\n[1/3] Đọc transactions_train.csv...")

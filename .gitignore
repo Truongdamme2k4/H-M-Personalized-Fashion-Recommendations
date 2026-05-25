@@ -86,3 +86,17 @@ models/*.model
 # Misc
 *.parquet
 submission.csv
+
+# Ignore tất cả JSON, CSV, ZIP toàn project (data files lớn / regenerable)
+*.json
+*.csv
+*.zip
+# Whitelist các file cấu hình JSON cần track
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.*.json
+!eslint.config.json
+!**/manifest.json
+!.claude/settings*.json
+!bigdata/config/*.json
