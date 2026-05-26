@@ -23,4 +23,6 @@ RUN pip install --no-cache-dir \
     lightgbm==4.1.0 \
     pandas==2.1.4 \
     pyarrow==14.0.2 \
-    numpy==1.26.3
+    numpy==1.26.3 \
+    boto3==1.34.34 \
+    psycopg2-binary==2.9.9

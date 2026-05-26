@@ -1,11 +1,49 @@
 # H&M Personalized Fashion Recommendations
 
-Hệ thống gợi ý thời trang cá nhân hoá end-to-end trên dataset Kaggle **H&M Personalized Fashion Recommendations**, gồm:
+![Architecture](architecture.png)
 
-- **Pipeline ETL** Spark + Airflow sinh Top-12 sản phẩm/khách hàng (7 nguồn ứng viên → LightGBM xếp hạng)
-- **Backend** Node.js / Express phục vụ API gợi ý
-- **Frontend** React (Vite + Mantine) hiển thị sản phẩm
-- **MongoDB** lưu kết quả gợi ý cho backend truy vấn
+## Giới thiệu
+
+Hệ thống gợi ý thời trang **cá nhân hoá end-to-end** xây dựng trên dataset Kaggle [H&M Personalized Fashion Recommendations](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations). Mục tiêu: với mỗi khách hàng, sinh ra **Top-12 sản phẩm** có khả năng mua cao nhất trong 7 ngày tới.
+
+Kiến trúc đi theo pattern **Data Lake chuẩn industry** (Medallion architecture):
+
+```
+CSV (seed) ──► PostgreSQL (OLTP) ──► MinIO Data Lake ──► MongoDB ──► Web
+                                     (bronze → silver → gold)
+```
+
+- **Tầng OLTP** — PostgreSQL mô phỏng DB sản phẩm/đơn hàng (`articles`, `customers`, `transactions`).
+- **Tầng Data Lake** — MinIO (S3-compatible) lưu 3 lớp: `bronze` (raw snapshot từ OLTP), `silver` (đã làm sạch + candidates + features), `gold` (predictions + models).
+- **Pipeline ETL** — Apache Airflow điều phối **15 task** Spark/Python: extract OLTP → clean → 7 candidate generators song song → union → feature engineering → LightGBM ranking → export Top-12.
+- **Tầng Serving** — MongoDB cache Top-12 per user + global trending + age-group bestsellers cho backend truy vấn nhanh.
+- **Web** — Node.js Express API + React (Vite + Mantine) UI.
+
+### 7 nguồn ứng viên (candidate generators)
+
+| Strategy | Bắt pattern gì |
+|---|---|
+| Repurchase | Khách mua lại đồ cũ |
+| Popularity | Bestseller 7 ngày gần nhất |
+| Sibling | Biến thể cùng `product_code` |
+| ALS (Spark MLlib) | Latent user/item factor |
+| ItemCF | Co-occurrence + cosine similarity |
+| Categorical | Gu (gender × group × colour) |
+| FP-Growth (Spark MLlib) | Association rules support/confidence |
+
+### Công nghệ
+
+| Layer | Tech |
+|---|---|
+| Source DB | PostgreSQL 15 |
+| Data Lake | MinIO (S3-compatible object store) |
+| Compute | Apache Spark 3.5 (Standalone master + worker) |
+| Ranking | LightGBM 4.1 (gradient boosting) |
+| Orchestration | Apache Airflow 2.10 |
+| Serving DB | MongoDB 6 |
+| Backend | Node.js + Express |
+| Frontend | React + Vite + Mantine |
+| Deployment | Docker Compose (single-node demo) |
 
 ## Cấu trúc
 
@@ -76,6 +114,8 @@ docker compose up -d --build
 | http://localhost:8082 | Airflow UI | admin / admin |
 | http://localhost:8080 | Spark Master UI | — |
 | http://localhost:8081 | Spark Worker UI | — |
+| http://localhost:9001 | MinIO Console | minioadmin / minioadmin |
+| postgresql://localhost:5433 | OLTP Postgres (`hm_oltp`) | hm / hm |
 | mongodb://localhost:27017 | MongoDB (`hm_recsys` db) | — |
 
 ### 4. Trigger DAG
@@ -83,7 +123,7 @@ docker compose up -d --build
 Trên Airflow UI:
 1. Bật toggle `recsys_pipeline_v1`
 2. Click ▶️ → **Trigger DAG**
-3. Xem tab **Graph** để theo dõi 15 task
+3. Xem tab **Graph** để theo dõi 16 task
 
 Hoặc CLI:
 ```bash
@@ -103,9 +143,10 @@ docker compose exec mongodb mongosh hm_recsys --eval '
 ## Luồng pipeline
 
 ```
-wait_raw_data (FileSensor)
-   └→ step1_cleaning (Spark)
-        └→ [7 candidate scripts song song] (Spark)
+wait_oltp_ready (Postgres sensor)
+   └→ extract_oltp_to_minio (Spark JDBC → s3a://datalake/bronze)
+        └→ step1_cleaning (Spark, bronze → silver)
+             └→ [7 candidate scripts song song] (Spark)
              ├ candidate_repurchase    — Top-15 items mới mua gần nhất
              ├ candidate_popularity    — Top-30 bestseller 7 ngày
              ├ candidate_sibling       — Các biến thể cùng product_code

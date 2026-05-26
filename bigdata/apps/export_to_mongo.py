@@ -11,31 +11,14 @@ import argparse
 import datetime
 import json
 import os
-import subprocess
 import pandas as pd
 from pymongo import MongoClient, UpdateOne, WriteConcern
 
-from common import PATHS
+from common import PATHS, s3a_to_local
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://mongodb:27017")
 MONGO_DB = os.environ.get("MONGO_DB", "hm_recsys")
 BATCH_SIZE = 5000
-
-LOCAL_TOP12 = "/tmp/top12_recommendations.parquet"
-LOCAL_GLOBAL = "/tmp/global_top12.json"
-LOCAL_AGE = "/tmp/age_bestsellers.json"
-
-
-def hdfs_get(hdfs_path: str, local_path: str):
-    if hdfs_path.startswith("file://"):
-        return hdfs_path[len("file://"):]
-    if os.path.exists(local_path):
-        if os.path.isdir(local_path):
-            subprocess.run(["rm", "-rf", local_path], check=True)
-        else:
-            os.remove(local_path)
-    subprocess.run(["hdfs", "dfs", "-get", "-f", hdfs_path, local_path], check=True)
-    return local_path
 
 
 def upsert_users(coll, top12_df: pd.DataFrame, now: datetime.datetime):
@@ -58,9 +41,9 @@ def upsert_users(coll, top12_df: pd.DataFrame, now: datetime.datetime):
 
 
 def main(run_date: str | None):
-    top12_path  = hdfs_get(f"{PATHS['predictions']}/top12_recommendations.parquet", LOCAL_TOP12)
-    global_path = hdfs_get(f"{PATHS['predictions']}/global_top12.json", LOCAL_GLOBAL)
-    age_path    = hdfs_get(f"{PATHS['predictions']}/age_bestsellers.json", LOCAL_AGE)
+    top12_path  = s3a_to_local(f"{PATHS['predictions']}/top12_recommendations.parquet", "/tmp/exp_top12")
+    global_path = s3a_to_local(f"{PATHS['predictions']}/global_top12.json",              "/tmp/exp_global")
+    age_path    = s3a_to_local(f"{PATHS['predictions']}/age_bestsellers.json",           "/tmp/exp_age")
 
     top12 = pd.read_parquet(top12_path)
     with open(global_path) as f:

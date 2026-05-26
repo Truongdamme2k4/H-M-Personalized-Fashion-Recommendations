@@ -6,11 +6,10 @@ Lưu model về HDFS thông qua hdfs CLI hoặc volume mount.
 import argparse
 import gc
 import os
-import subprocess
 import pandas as pd
 import lightgbm as lgb
 
-from common import PATHS
+from common import PATHS, s3a_to_local, local_to_s3a
 
 
 FEATURES = [
@@ -38,32 +37,13 @@ def downcast(df):
     return df
 
 
-def _strip_file_scheme(p: str) -> str:
-    return p[len("file://"):] if p.startswith("file://") else p
-
-
-def hdfs_to_local(hdfs_path: str, local_dir: str):
-    """Nếu HDFS_BASE là file://, đọc trực tiếp filesystem; ngược lại dùng hdfs CLI."""
-    if hdfs_path.startswith("file://"):
-        return _strip_file_scheme(hdfs_path)
-    os.makedirs(local_dir, exist_ok=True)
-    subprocess.run(["hdfs", "dfs", "-get", "-f", hdfs_path, local_dir], check=True)
-    return os.path.join(local_dir, os.path.basename(hdfs_path.rstrip("/")))
-
-
-def local_to_hdfs(local_path: str, hdfs_path: str):
-    if hdfs_path.startswith("file://"):
-        target = _strip_file_scheme(hdfs_path)
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        if local_path != target:
-            subprocess.run(["cp", "-rf", local_path, target], check=True)
-        return
-    subprocess.run(["hdfs", "dfs", "-mkdir", "-p", os.path.dirname(hdfs_path)], check=True)
-    subprocess.run(["hdfs", "dfs", "-put", "-f", local_path, hdfs_path], check=True)
+# Alias để các module khác (predict_lightgbm) tiếp tục import cùng tên
+hdfs_to_local = s3a_to_local
+local_to_hdfs = local_to_s3a
 
 
 def main():
-    train_path = hdfs_to_local(f"{PATHS['master']}/train_enriched.parquet", "/tmp/train_enriched")
+    train_path = s3a_to_local(f"{PATHS['master']}/train_enriched.parquet", "/tmp/train_enriched")
     cols = FEATURES + ["label", "customer_id"]
     pdf = pd.read_parquet(train_path, columns=cols)
     pdf = downcast(pdf)
@@ -88,7 +68,7 @@ def main():
 
     os.makedirs(os.path.dirname(LOCAL_MODEL), exist_ok=True)
     booster.save_model(LOCAL_MODEL)
-    local_to_hdfs(LOCAL_MODEL, HDFS_MODEL)
+    local_to_s3a(LOCAL_MODEL, HDFS_MODEL)
 
     importance = pd.DataFrame({
         "feature": booster.feature_name(),

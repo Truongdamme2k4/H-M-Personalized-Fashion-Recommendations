@@ -2,17 +2,14 @@
 Recsys ETL pipeline — chạy weekly.
 
 Luồng:
-  wait_raw_data
-   → step1_cleaning
+  wait_oltp_ready
+   → extract_oltp_to_minio   (Spark JDBC → MinIO bronze)
+   → step1_cleaning          (bronze → silver)
    → [7 candidate jobs song song] → union_master
    → feature_label → train_lightgbm → predict_lightgbm
    → export_to_mongo → notify
 
-Scripts Spark dùng SparkSubmitOperator (conn 'spark_default').
-Train/predict/export dùng BashOperator (chạy thuần Python trong container airflow).
-
-Mọi script đọc env HDFS_BASE để biết nên đọc HDFS hay local FS.
-Trong demo compose: HDFS_BASE=file:///workspace, data ở /workspace/data/raw/.
+Spark jobs nhận MinIO/JDBC config qua env vars + spark.jars.packages cho s3a/postgres.
 """
 import os
 from datetime import datetime, timedelta
@@ -24,18 +21,25 @@ from airflow.sensors.python import PythonSensor
 
 APPS = "/opt/spark-apps"
 SPARK_CONN = "spark_default"
-SPARK_CONF = {"spark.master": "spark://spark-master:7077"}
 
-# Env truyền xuống executor để các script biết base path (HDFS vs file://)
-HDFS_BASE = os.environ.get("HDFS_BASE", "hdfs://namenode:9000")
-SPARK_ENV_VARS = {
-    "HDFS_BASE": HDFS_BASE,
-    "PYTHONPATH": APPS,
-}
+# Env truyền xuống Spark driver/executor — datalake + OLTP config
+_PASS_ENV = [
+    "DATALAKE_BASE", "MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY",
+    "OLTP_JDBC_URL", "OLTP_JDBC_USER", "OLTP_JDBC_PASSWORD",
+]
+SPARK_ENV_VARS = {k: os.environ.get(k, "") for k in _PASS_ENV if os.environ.get(k)}
+SPARK_ENV_VARS["PYTHONPATH"] = APPS
+
+SPARK_PACKAGES = ",".join([
+    "org.apache.hadoop:hadoop-aws:3.3.4",
+    "com.amazonaws:aws-java-sdk-bundle:1.12.262",
+    "org.postgresql:postgresql:42.5.4",
+])
+
 SPARK_EXECUTOR_CONF = {
-    **SPARK_CONF,
-    "spark.executorEnv.HDFS_BASE": HDFS_BASE,
-    "spark.executorEnv.PYTHONPATH": APPS,
+    "spark.master": "spark://spark-master:7077",
+    "spark.jars.packages": SPARK_PACKAGES,
+    **{f"spark.executorEnv.{k}": v for k, v in SPARK_ENV_VARS.items()},
 }
 
 default_args = {
@@ -48,17 +52,23 @@ default_args = {
 }
 
 
-def check_raw_data() -> bool:
-    """Sensor: kiểm tra transactions_train.csv tồn tại (HDFS hoặc local)."""
-    if HDFS_BASE.startswith("file://"):
-        path = HDFS_BASE[len("file://"):] + "/data/raw/transactions_train.csv"
-        return os.path.exists(path)
-    import subprocess
-    result = subprocess.run(
-        ["hdfs", "dfs", "-test", "-e", "/data/raw/transactions_train.csv"],
-        capture_output=True,
-    )
-    return result.returncode == 0
+def check_oltp_ready() -> bool:
+    """Sensor: ping OLTP Postgres và verify bảng transactions có data."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(
+            host="oltp-postgres", port=5432, dbname="hm_oltp",
+            user=os.environ.get("OLTP_JDBC_USER", "hm"),
+            password=os.environ.get("OLTP_JDBC_PASSWORD", "hm"),
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM transactions")
+        n = cur.fetchone()[0]
+        conn.close()
+        return n > 0
+    except Exception as e:
+        print(f"OLTP not ready: {e}")
+        return False
 
 
 with DAG(
@@ -72,12 +82,22 @@ with DAG(
     tags=["recsys", "hm"],
 ) as dag:
 
-    wait_raw = PythonSensor(
-        task_id="wait_raw_data",
-        python_callable=check_raw_data,
-        poke_interval=30,
+    wait_oltp = PythonSensor(
+        task_id="wait_oltp_ready",
+        python_callable=check_oltp_ready,
+        poke_interval=15,
         timeout=600,
         mode="reschedule",
+    )
+
+    extract_oltp = SparkSubmitOperator(
+        task_id="extract_oltp_to_minio",
+        application=f"{APPS}/extract_oltp_to_minio.py",
+        conn_id=SPARK_CONN,
+        conf=SPARK_EXECUTOR_CONF,
+        env_vars=SPARK_ENV_VARS,
+        py_files=f"{APPS}/common.py",
+        verbose=True,
     )
 
     step1_clean = SparkSubmitOperator(
@@ -86,6 +106,7 @@ with DAG(
         conn_id=SPARK_CONN,
         conf=SPARK_EXECUTOR_CONF,
         env_vars=SPARK_ENV_VARS,
+        py_files=f"{APPS}/common.py",
         verbose=True,
     )
 
@@ -146,7 +167,7 @@ with DAG(
         ),
     )
 
-    wait_raw >> step1_clean >> candidates
+    wait_oltp >> extract_oltp >> step1_clean >> candidates
     for c in candidates:
         c >> union
     union >> feat_label >> train_lgbm >> predict_lgbm >> export_mongo >> notify
