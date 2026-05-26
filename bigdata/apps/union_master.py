@@ -9,7 +9,7 @@ from pyspark.sql import functions as F
 from common import get_spark, get_time_windows, evaluate_recall, write_parquet, PATHS
 
 
-STRATEGIES = ["repurchase", "popularity", "sibling", "als", "itemcf", "categorical"]
+STRATEGIES = ["repurchase", "popularity", "sibling", "als", "itemcf", "categorical", "fpgrowth"]
 
 
 def standardize(df):
@@ -18,7 +18,10 @@ def standardize(df):
         df = df.withColumn("als_score", F.lit(0.0))
     if "itemcf_score" not in cols:
         df = df.withColumn("itemcf_score", F.lit(0.0))
-    return df.select("customer_id", "article_id", "strategy", "als_score", "itemcf_score")
+    if "fpgrowth_score" not in cols:
+        df = df.withColumn("fpgrowth_score", F.lit(0.0))
+    return df.select("customer_id", "article_id", "strategy",
+                     "als_score", "itemcf_score", "fpgrowth_score")
 
 
 def create_master(df_list):
@@ -32,6 +35,7 @@ def create_master(df_list):
             F.collect_set("strategy").alias("sources"),
             F.max("als_score").alias("als_score"),
             F.max("itemcf_score").alias("itemcf_score"),
+            F.max("fpgrowth_score").alias("fpgrowth_score"),
         )
         .withColumn("source_count", F.size("sources"))
     )

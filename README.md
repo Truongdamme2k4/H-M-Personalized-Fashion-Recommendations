@@ -2,7 +2,7 @@
 
 Hệ thống gợi ý thời trang cá nhân hoá end-to-end trên dataset Kaggle **H&M Personalized Fashion Recommendations**, gồm:
 
-- **Pipeline ETL** Spark + Airflow sinh Top-12 sản phẩm/khách hàng (6 nguồn ứng viên → LightGBM xếp hạng)
+- **Pipeline ETL** Spark + Airflow sinh Top-12 sản phẩm/khách hàng (7 nguồn ứng viên → LightGBM xếp hạng)
 - **Backend** Node.js / Express phục vụ API gợi ý
 - **Frontend** React (Vite + Mantine) hiển thị sản phẩm
 - **MongoDB** lưu kết quả gợi ý cho backend truy vấn
@@ -16,7 +16,7 @@ Hệ thống gợi ý thời trang cá nhân hoá end-to-end trên dataset Kaggl
 │   │   ├── common.py              # SparkSession builder + đường dẫn HDFS/local
 │   │   ├── sample_dataset.py      # Sinh demo subset từ CSV gốc
 │   │   ├── step1_cleaning.py      # Cleaning raw CSV → parquet
-│   │   ├── candidate_*.py         # 6 nguồn ứng viên
+│   │   ├── candidate_*.py         # 7 nguồn ứng viên
 │   │   ├── union_master.py        # Gộp ứng viên
 │   │   ├── feature_label.py       # 22 đặc trưng + nhãn
 │   │   ├── train_lightgbm.py      # Train LightGBM ranking
@@ -27,7 +27,7 @@ Hệ thống gợi ý thời trang cá nhân hoá end-to-end trên dataset Kaggl
 │   ├── docker-file.airflow.demo   # Airflow image custom
 │   └── docker-stack.yml           # Phiên bản Swarm + Hadoop (production)
 ├── notebooks/                     # Notebook gốc trên Colab (Spark + Drive)
-│   ├── candidates/                # 6 nguồn ứng viên
+│   ├── candidates/                # 7 nguồn ứng viên
 │   └── models/                    # LightGBM, FPGrowth, CLIP
 ├── backend/                       # Node.js Express API
 └── frontend/                      # React + Vite UI
@@ -83,7 +83,7 @@ docker compose up -d --build
 Trên Airflow UI:
 1. Bật toggle `recsys_pipeline_v1`
 2. Click ▶️ → **Trigger DAG**
-3. Xem tab **Graph** để theo dõi 14 task
+3. Xem tab **Graph** để theo dõi 15 task
 
 Hoặc CLI:
 ```bash
@@ -105,13 +105,14 @@ docker compose exec mongodb mongosh hm_recsys --eval '
 ```
 wait_raw_data (FileSensor)
    └→ step1_cleaning (Spark)
-        └→ [6 candidate scripts song song] (Spark)
+        └→ [7 candidate scripts song song] (Spark)
              ├ candidate_repurchase    — Top-15 items mới mua gần nhất
              ├ candidate_popularity    — Top-30 bestseller 7 ngày
              ├ candidate_sibling       — Các biến thể cùng product_code
              ├ candidate_als           — Spark ML ALS (rank=32, implicit)
              ├ candidate_itemcf        — Co-occurrence + cosine
-             └ candidate_categorical   — Gu (gender × group × colour)
+             ├ candidate_categorical   — Gu (gender × group × colour)
+             └ candidate_fpgrowth      — FP-Growth association rules
                   └→ union_master (Spark)
                        └→ feature_label (Spark, 22 features)
                             └→ train_lightgbm (Python/lightgbm)

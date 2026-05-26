@@ -4,7 +4,7 @@ Recsys ETL pipeline — chạy weekly.
 Luồng:
   wait_raw_data
    → step1_cleaning
-   → [6 candidate jobs song song] → union_master
+   → [7 candidate jobs song song] → union_master
    → feature_label → train_lightgbm → predict_lightgbm
    → export_to_mongo → notify
 
@@ -111,9 +111,11 @@ with DAG(
         application=f"{APPS}/candidate_itemcf.py", **common_spark_args)
     cand_categorical = SparkSubmitOperator(task_id="cand_categorical",
         application=f"{APPS}/candidate_categorical.py", **common_spark_args)
+    cand_fpgrowth    = SparkSubmitOperator(task_id="cand_fpgrowth",
+        application=f"{APPS}/candidate_fpgrowth.py", **common_spark_args)
 
     candidates = [cand_repurchase, cand_popularity, cand_sibling,
-                  cand_als, cand_itemcf, cand_categorical]
+                  cand_als, cand_itemcf, cand_categorical, cand_fpgrowth]
 
     union = SparkSubmitOperator(
         task_id="union_master",

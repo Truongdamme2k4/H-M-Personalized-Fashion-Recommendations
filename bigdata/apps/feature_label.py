@@ -94,7 +94,7 @@ def calculate_features(base_df, transactions, customers, articles, end_date):
         "age_group_item_sales": 0, "age": 25,
         "product_type_name": "Unknown", "colour_group_name": "Unknown",
         "user_type_buy_count": 0, "item_avg_age": 25,
-        "als_score": 0.0, "itemcf_score": 0.0,
+        "als_score": 0.0, "itemcf_score": 0.0, "fpgrowth_score": 0.0,
     })
 
     df = df.withColumn("price_diff", F.abs(F.col("item_avg_price") - F.col("user_avg_budget"))) \
@@ -102,7 +102,8 @@ def calculate_features(base_df, transactions, customers, articles, end_date):
            .withColumn("trend_velocity",
                        F.col("item_sales_last_7d") / (F.col("item_sales_last_14d") + 1.0)) \
            .withColumn("from_als", F.when(F.array_contains(F.col("sources"), "als"), 1).otherwise(0)) \
-           .withColumn("from_itemcf", F.when(F.array_contains(F.col("sources"), "itemcf"), 1).otherwise(0))
+           .withColumn("from_itemcf", F.when(F.array_contains(F.col("sources"), "itemcf"), 1).otherwise(0)) \
+           .withColumn("from_fpgrowth", F.when(F.array_contains(F.col("sources"), "fpgrowth"), 1).otherwise(0))
 
     return df.drop("sources", "age_group")
 

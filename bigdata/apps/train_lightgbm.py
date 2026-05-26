@@ -20,7 +20,8 @@ FEATURES = [
     "item_sales_last_3d", "item_sales_last_7d", "item_sales_last_14d",
     "trend_velocity", "age_group_item_sales", "user_type_buy_count",
     "age_diff", "price_diff",
-    "from_als", "from_itemcf", "als_score", "itemcf_score",
+    "from_als", "from_itemcf", "from_fpgrowth",
+    "als_score", "itemcf_score", "fpgrowth_score",
     "product_type_name", "colour_group_name",
 ]
 CATEGORICAL = ["product_type_name", "colour_group_name"]
