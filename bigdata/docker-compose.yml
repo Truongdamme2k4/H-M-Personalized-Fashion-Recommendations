@@ -84,6 +84,19 @@ services:
       - mongo-data:/data/db
     networks: [bigdata]
 
+  mongo-express:
+    image: mongo-express:1.0.2
+    depends_on: [mongodb]
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: "27017"
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+      ME_CONFIG_OPTIONS_EDITORTHEME: ambiance
+    ports:
+      - "8083:8081"
+    networks: [bigdata]
+
   spark-master:
     image: bitnamilegacy/spark:3.5
     hostname: spark-master

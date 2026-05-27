@@ -2,24 +2,23 @@
 
 ![Architecture](architecture.png)
 
-## Giới thiệu
+## 1. Bài toán
 
-Hệ thống gợi ý thời trang **cá nhân hoá end-to-end** xây dựng trên dataset Kaggle [H&M Personalized Fashion Recommendations](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations). Mục tiêu: với mỗi khách hàng, sinh ra **Top-12 sản phẩm** có khả năng mua cao nhất trong 7 ngày tới.
+Dataset [H&M Personalized Fashion Recommendations](https://www.kaggle.com/competitions/h-and-m-personalized-fashion-recommendations) — với mỗi khách hàng, gợi ý **Top-12 sản phẩm** có khả năng mua cao nhất trong 7 ngày tới.
 
-Kiến trúc đi theo pattern **Data Lake chuẩn industry** (Medallion architecture):
+Hệ thống đi end-to-end theo pattern **Medallion** (Data Lake bronze → silver → gold), bao gồm:
+- **OLTP** (PostgreSQL) — mô phỏng DB hãng bán lẻ: `articles`, `customers`, `transactions`.
+- **Data Lake** (MinIO, S3-compatible) — bronze (raw snapshot) → silver (cleaned + candidates + features) → gold (predictions + models).
+- **Pipeline ETL** (Airflow + Spark) — extract OLTP → clean → 7 candidate generators song song → union → feature engineering → LightGBM ranking → export Top-12.
+- **Serving DB** (MongoDB) — cache Top-12 per user + global trending + age-group bestsellers.
+- **Web** — Express API đọc thẳng MongoDB + React/Vite/Mantine UI.
 
 ```
-CSV (seed) ──► PostgreSQL (OLTP) ──► MinIO Data Lake ──► MongoDB ──► Web
-                                     (bronze → silver → gold)
+CSV ──► PostgreSQL ──► MinIO (bronze → silver → gold) ──► MongoDB ──► Express/React
+        (OLTP)         Spark + LightGBM (Airflow)         (serving)    (web)
 ```
 
-- **Tầng OLTP** — PostgreSQL mô phỏng DB sản phẩm/đơn hàng (`articles`, `customers`, `transactions`).
-- **Tầng Data Lake** — MinIO (S3-compatible) lưu 3 lớp: `bronze` (raw snapshot từ OLTP), `silver` (đã làm sạch + candidates + features), `gold` (predictions + models).
-- **Pipeline ETL** — Apache Airflow điều phối **15 task** Spark/Python: extract OLTP → clean → 7 candidate generators song song → union → feature engineering → LightGBM ranking → export Top-12.
-- **Tầng Serving** — MongoDB cache Top-12 per user + global trending + age-group bestsellers cho backend truy vấn nhanh.
-- **Web** — Node.js Express API + React (Vite + Mantine) UI.
-
-### 7 nguồn ứng viên (candidate generators)
+### 7 nguồn ứng viên
 
 | Strategy | Bắt pattern gì |
 |---|---|
@@ -31,51 +30,31 @@ CSV (seed) ──► PostgreSQL (OLTP) ──► MinIO Data Lake ──► Mongo
 | Categorical | Gu (gender × group × colour) |
 | FP-Growth (Spark MLlib) | Association rules support/confidence |
 
-### Công nghệ
+### Stack
 
 | Layer | Tech |
 |---|---|
 | Source DB | PostgreSQL 15 |
-| Data Lake | MinIO (S3-compatible object store) |
-| Compute | Apache Spark 3.5 (Standalone master + worker) |
-| Ranking | LightGBM 4.1 (gradient boosting) |
+| Data Lake | MinIO |
+| Compute | Apache Spark 3.5 |
+| Ranking | LightGBM 4.1 |
 | Orchestration | Apache Airflow 2.10 |
-| Serving DB | MongoDB 6 |
+| Serving DB | MongoDB 6 (+ Mongo Express UI) |
 | Backend | Node.js + Express |
 | Frontend | React + Vite + Mantine |
-| Deployment | Docker Compose (single-node demo) |
+| Deploy | Docker Compose (single-node demo) |
 
-## Cấu trúc
+## 2. Cài đặt
 
-```
-.
-├── bigdata/                       # ETL pipeline (Spark + Airflow + Mongo)
-│   ├── apps/                      # Spark scripts + helper Python
-│   │   ├── common.py              # SparkSession builder + đường dẫn HDFS/local
-│   │   ├── sample_dataset.py      # Sinh demo subset từ CSV gốc
-│   │   ├── step1_cleaning.py      # Cleaning raw CSV → parquet
-│   │   ├── candidate_*.py         # 7 nguồn ứng viên
-│   │   ├── union_master.py        # Gộp ứng viên
-│   │   ├── feature_label.py       # 22 đặc trưng + nhãn
-│   │   ├── train_lightgbm.py      # Train LightGBM ranking
-│   │   ├── predict_lightgbm.py    # Top-12 + fallback time-decayed
-│   │   └── export_to_mongo.py     # Đẩy vào MongoDB
-│   ├── dags/recsys_pipeline.py    # Airflow DAG
-│   ├── docker-compose.yml         # Stack demo (single-node)
-│   ├── docker-file.airflow.demo   # Airflow image custom
-│   └── docker-stack.yml           # Phiên bản Swarm + Hadoop (production)
-├── notebooks/                     # Notebook gốc trên Colab (Spark + Drive)
-│   ├── candidates/                # 7 nguồn ứng viên
-│   └── models/                    # LightGBM, FPGrowth, CLIP
-├── backend/                       # Node.js Express API
-└── frontend/                      # React + Vite UI
-```
+### Yêu cầu
 
-## Quick start — Demo pipeline end-to-end
+- Docker Desktop ≥ 4.x (cấp ≥ 8GB RAM cho Spark/Airflow)
+- Node.js ≥ 20 (chạy backend + frontend)
+- Python 3.10+ (chỉ cần khi sinh demo subset từ CSV gốc)
 
-### 1. Chuẩn bị data
+### Lấy dataset
 
-Tải dataset Kaggle về (3 zip: `articles.csv.zip`, `customers.csv.zip`, `transactions_train.csv.zip`) và đặt trong project root. Sau đó giải nén:
+Tải 3 zip từ Kaggle về root project, giải nén:
 
 ```bash
 mkdir -p data/raw
@@ -84,7 +63,7 @@ for f in articles.csv.zip customers.csv.zip transactions_train.csv.zip; do
 done
 ```
 
-### 2. Sinh demo subset (~30MB, 12K users)
+### Sinh demo subset (~30MB, 12K users — đủ cho 1 lần chạy pipeline ngắn)
 
 ```bash
 python3 -m venv .demo_venv
@@ -96,51 +75,111 @@ python3 -m venv .demo_venv
     --user_frac 0.02 \
     --since 2020-06-01
 
-# Copy demo vào data/raw để pipeline đọc
-cp data/demo/*.csv data/raw/
+cp data/demo/*.csv data/raw/   # OLTP seed sẽ đọc từ đây
 ```
 
-### 3. Khởi động stack
+## 3. Chạy demo
+
+Luồng demo có 3 phần độc lập:
+
+```
+(A) Bigdata stack (Airflow + Spark + Mongo + MinIO + OLTP)
+        ↓ pipeline ghi user_recommendations vào MongoDB
+(B) Backend Express (đọc Mongo, expose /api/...)
+(C) Frontend Vite (gọi backend)
+```
+
+### A. Bigdata stack — Airflow chạy pipeline
 
 ```bash
 cd bigdata
 docker compose up -d --build
 ```
 
-Đợi ~30s để Airflow init xong, rồi mở:
+Đợi ~30s. Mở các UI:
 
 | URL | Service | Login |
 |---|---|---|
-| http://localhost:8082 | Airflow UI | admin / admin |
+| http://localhost:8082 | **Airflow** UI | admin / admin |
+| http://localhost:8083 | **Mongo Express** UI | admin / admin |
 | http://localhost:8080 | Spark Master UI | — |
 | http://localhost:8081 | Spark Worker UI | — |
 | http://localhost:9001 | MinIO Console | minioadmin / minioadmin |
 | postgresql://localhost:5433 | OLTP Postgres (`hm_oltp`) | hm / hm |
-| mongodb://localhost:27017 | MongoDB (`hm_recsys` db) | — |
+| mongodb://localhost:27017 | MongoDB (`hm_recsys`) | — |
 
-### 4. Trigger DAG
+**Trigger pipeline trên Airflow UI:**
+1. Mở http://localhost:8082, login admin/admin
+2. Bật toggle `recsys_pipeline_v1`
+3. Click ▶ → **Trigger DAG**
+4. Tab **Graph** để theo dõi 15 task (extract → clean → 7 candidate generators song song → union → feature_label → train_lightgbm → predict → export_to_mongo)
 
-Trên Airflow UI:
-1. Bật toggle `recsys_pipeline_v1`
-2. Click ▶️ → **Trigger DAG**
-3. Xem tab **Graph** để theo dõi 16 task
-
-Hoặc CLI:
-```bash
-docker compose exec airflow airflow dags unpause recsys_pipeline_v1
-docker compose exec airflow airflow dags trigger recsys_pipeline_v1
-```
-
-Pipeline mất ~10 phút trên demo subset. Khi xong, kiểm tra Mongo:
+Pipeline mất ~10 phút trên demo subset. Khi xong, kiểm tra Mongo qua UI ở http://localhost:8083 (DB `hm_recsys` → collection `user_recommendations`) hoặc CLI:
 
 ```bash
 docker compose exec mongodb mongosh hm_recsys --eval '
-  db.user_recommendations.findOne();
   print(db.user_recommendations.countDocuments() + " users");
+  printjson(db.user_recommendations.findOne());
+  printjson(db.pipeline_runs.find().sort({finished_at: -1}).limit(1).toArray());
 '
 ```
 
-## Luồng pipeline
+### B. Backend Express
+
+Backend kết nối thẳng tới Mongo ở `localhost:27017`. Lần đầu boot, nếu collection `articles` / `similar_products` / `cart_recommendations` trong Mongo còn trống, backend tự seed từ các file ở root (`article_metadata.csv`, `similar_products.json`, `cart_recommendations.json`).
+
+```bash
+cd backend
+cp .env.example .env       # mặc định PORT=4100, MONGO_URI=mongodb://localhost:27017
+npm install
+npm run dev
+```
+
+Health check:
+```bash
+curl http://localhost:4100/health
+curl http://localhost:4100/api/recommendations/trending
+```
+
+### C. Frontend Vite
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Mở http://localhost:5173. UI sẽ:
+- Trang chủ: lấy `personalized` recommendations cho customer ID đã chọn (lấy từ `user_recommendations` trên Mongo). Nếu user chưa có trong DB → fallback `trending`.
+- Trang chi tiết: gọi `/products/:id/similar` → đọc từ `similar_products`.
+- Giỏ hàng: POST `/api/recommendations/cart` → tính co-purchase từ `cart_recommendations`.
+
+## 4. Schema MongoDB
+
+```javascript
+// user_recommendations (pipeline ghi)
+{ _id: "<customer_id>", items: ["0817354001", ...], updated_at: ISODate }
+
+// global_trending (pipeline ghi)
+{ _id: "global", items: [...top 12...], updated_at: ISODate }
+
+// age_bestsellers (pipeline ghi)
+{ _id: "25-35" | "36-45" | ..., items: [...top 12...], updated_at: ISODate }
+
+// pipeline_runs (pipeline ghi)
+{ run_date, finished_at, user_count, global_count, age_groups }
+
+// articles (backend seed từ article_metadata.csv)
+{ _id: "<article_id>", name, type, price, imageFolder }
+
+// similar_products (backend seed từ similar_products.json — output CLIP/ItemCF notebook)
+{ _id: "<article_id>", items: ["<article_id>", ...] }
+
+// cart_recommendations (backend seed từ cart_recommendations.json — output FPGrowth notebook)
+{ _id: "<article_id>", items: ["<article_id>", ...] }
+```
+
+## 5. Pipeline DAG
 
 ```
 wait_oltp_ready (Postgres sensor)
@@ -158,7 +197,7 @@ wait_oltp_ready (Postgres sensor)
                        └→ feature_label (Spark, 22 features)
                             └→ train_lightgbm (Python/lightgbm)
                                  └→ predict_lightgbm — Top-12 + fallback
-                                      └→ export_to_mongo — đẩy lên MongoDB
+                                      └→ export_to_mongo
                                            └→ notify_done
 ```
 
@@ -174,74 +213,56 @@ wait_oltp_ready (Postgres sensor)
 | Popularity | 30 | 0.0236 |
 | **Master (union)** | ~97 / user | **0.0905** |
 
-## MongoDB schema
+## 6. Cấu trúc thư mục
 
-```javascript
-// user_recommendations
-{ _id: "<customer_id>", items: ["0817354001", ...], updated_at: ISODate }
-
-// global_trending
-{ _id: "global", items: [...top 12...], updated_at: ISODate }
-
-// age_bestsellers
-{ _id: "25-35" | "36-45" | ..., items: [...top 12...], updated_at: ISODate }
-
-// pipeline_runs
-{ run_date: "2020-09-22", finished_at: ISODate, user_count, global_count, age_groups }
+```
+.
+├── bigdata/                       # Pipeline (Spark + Airflow + Mongo + MinIO)
+│   ├── apps/                      # Spark scripts + helper Python
+│   │   ├── common.py
+│   │   ├── sample_dataset.py
+│   │   ├── step1_cleaning.py
+│   │   ├── candidate_*.py         # 7 nguồn ứng viên
+│   │   ├── union_master.py
+│   │   ├── feature_label.py
+│   │   ├── train_lightgbm.py
+│   │   ├── predict_lightgbm.py
+│   │   └── export_to_mongo.py
+│   ├── dags/recsys_pipeline.py    # Airflow DAG
+│   ├── docker-compose.yml         # Demo stack (single-node)
+│   ├── docker-file.airflow.demo   # Airflow image custom
+│   ├── oltp_init/                 # SQL bootstrap cho OLTP Postgres
+│   └── notebooks/data/            # Notebook process_{articles,customer,transactions}
+├── notebooks/                     # Notebook gốc trên Colab (research version)
+│   ├── candidates/                # 7 nguồn ứng viên
+│   └── models/                    # LightGBM, FPGrowth, CLIP
+├── backend/                       # Node.js Express API
+│   └── src/
+│       ├── server.js
+│       ├── lib/{mongo,dataStore,csv,imageUrl,unsplash}.js
+│       └── routes/{recommendations,products}.js
+├── frontend/                      # React + Vite UI
+├── data/                          # raw CSV + cleaned + predictions
+├── article_metadata.csv           # Backend seed nguồn (articles)
+├── similar_products.json          # Backend seed nguồn (output notebook CLIP/ItemCF)
+├── cart_recommendations.json      # Backend seed nguồn (output notebook FPGrowth)
+└── global_trending.json           # Fallback trending nếu pipeline chưa chạy
 ```
 
-## Stack components
-
-| Service | Image | Port | Vai trò |
-|---|---|---|---|
-| airflow | `airflow-recsys:demo` (custom) | 8082 | Orchestrator + scheduler + webserver |
-| spark-master | `bitnamilegacy/spark:3.5` | 8080, 7077 | Spark cluster master |
-| spark-worker | `bitnamilegacy/spark:3.5` | 8081 | Spark executor (4GB / 4 cores) |
-| mongodb | `mongo:6.0` | 27017 | Lưu recommendations |
-| postgres | `postgres:13` | — | Airflow metadata DB |
-
-Image airflow build từ `apache/airflow:2.10.4-python3.12` + `pyspark==3.5.6` + `lightgbm==4.1.0` + `pymongo==4.6.1` + `libgomp1` (LGBM runtime).
-
-## Notes về thiết kế
-
-### Tại sao bỏ Hadoop trong demo compose?
-
-`docker-stack.yml` gốc có Hadoop (namenode, datanode, YARN) cho production. Với demo:
-- Data nhỏ (~30MB) không cần HDFS
-- Hadoop trên ARM64 (M-series Mac) chỉ chạy qua emulation, rất chậm
-- Toàn bộ scripts đã hỗ trợ env `HDFS_BASE=file:///workspace` → đọc/ghi local FS
-
-Production deploy dùng `docker stack deploy -c docker-stack.yml` (cần Docker Swarm), set `HDFS_BASE=hdfs://namenode:9000`.
-
-### Tại sao hardcode `--run_date 2020-09-22`?
-
-Dataset H&M dừng ở 2020-09-22. Nếu để `{{ ds }}` (ngày Airflow run), pipeline filter ra rỗng → ALS lỗi `No ratings available`. Production thay bằng `{{ ds }}` khi data refresh hàng ngày.
-
-### Tại sao Python phải khớp giữa driver và worker?
-
-PySpark serialize task qua Pickle, requires **exact minor version match**. Bitnami Spark 3.5 ship Python 3.12 → airflow image cũng phải Python 3.12 (`apache/airflow:2.10.4-python3.12`).
-
-## Troubleshooting
+## 7. Troubleshooting
 
 | Lỗi | Nguyên nhân | Fix |
 |---|---|---|
-| `Could not parse Master URL: 'spark-master:7077'` | Conn `spark_default` thiếu scheme | Set `AIRFLOW_CONN_SPARK_DEFAULT` dạng JSON với `host: "spark://spark-master"` |
-| `local class incompatible: serialVersionUID = ...` | pyspark version ≠ cluster version | Đồng bộ `pyspark` trong airflow image với `spark-submit --version` của cluster |
-| `Python in worker has different version (3,X) than driver` | Airflow Python ≠ Spark Python | Dùng airflow image cùng Python minor version với Spark image |
-| `No ratings available from MapPartitionsRDD` (ALS) | Filter time window không có data | Hardcode `--run_date` về ngày có data, hoặc backfill |
-| `libgomp.so.1: cannot open shared object file` | LightGBM thiếu OpenMP runtime | Cài `libgomp1` vào image |
-| Task `step1_cleaning` `up_for_retry` mãi | Spark master URL sai hoặc conn chưa load | Restart `airflow` container sau khi sửa env |
+| Backend `MongoServerSelectionError: ECONNREFUSED 127.0.0.1:27017` | Mongo container chưa lên | `cd bigdata && docker compose up -d mongodb` |
+| Backend bind port 4100 lỗi | Port đã bị chiếm (Firebase emulator default cũng :4000/:4100) | Đổi `PORT` trong `backend/.env` |
+| `recsys_pipeline_v1` task `up_for_retry` mãi | Spark master URL sai | Restart container `airflow` sau khi sửa env |
+| ALS task lỗi `No ratings available` | Filter time window không có data | Pipeline đã hardcode `--run_date 2020-09-22` để khớp dataset H&M |
+| `libgomp.so.1: cannot open shared object file` | LightGBM thiếu OpenMP | Đã cài `libgomp1` trong image, rebuild với `--build` |
 
-Logs từng task: Airflow UI → click task → tab **Logs**, hoặc:
+Logs từng task Airflow: UI → click task → tab **Logs**, hoặc:
 ```bash
 docker compose exec airflow find /opt/airflow/logs/dag_id=recsys_pipeline_v1 -name '*.log' | tail
 ```
-
-## Notebook gốc
-
-Các notebook trong `notebooks/` được viết để chạy trực tiếp trên **Google Colab** (mount Drive, đường dẫn `/content/drive/MyDrive/HM-DATA/`). Là phiên bản research; scripts trong `bigdata/apps/` là port production-ready của chúng.
-
-Notebook `FPGrowth.ipynb` (luật kết hợp) và `model CLIP.ipynb` (similar-products theo ảnh) chưa được wire vào DAG — có thể chạy riêng trên Colab hoặc đóng gói thành DAG phụ.
 
 ## Tham khảo
 
