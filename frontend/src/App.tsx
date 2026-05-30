@@ -37,8 +37,14 @@ import type { HomeResponse, Product } from './types'
 import { ProductGrid } from './components/ProductGrid'
 import './App.css'
 
-const SAMPLE_ID =
-  '000346516dd355b40badca0c0f5f37a318ddae31f0e0f76a3a0454eb591b6384'
+const SAMPLE_IDS = [
+  '00066fdcf5f0da690b898b287d05ce477bd2764ce975d138489da03510a42833',
+  '0012ac5495638a445c5ac97d8080616ed98bc8f2dbffb22af8833b75ea23e085',
+  '001324f693acaea0dea35333ba00ccddd0162d8bc81e76865034fca36cbb89c8',
+  '001acb589c6b72863cc8bc9e95c6c7277a549ddff2314238651de8f475820568',
+  '0027217107e6543586c853357873d338b57e3f624ea6222c94a30fbee728ba4d',
+  '0027b54e5fcbcfcf54c348c4b1a34aac0fb1c9cd1e2bc409776419a263ce7d64',
+]
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('f2')
@@ -279,17 +285,20 @@ export default function App() {
                 <Text size="xs" style={{ color: '#000' }}>
                   Thử nhanh:
                 </Text>
-                <Text
-                  size="xs"
-                  className="link-hover"
-                  style={{ cursor: 'pointer', color: '#000', fontWeight: 700 }}
-                  onClick={() => {
-                    setCustomerId(SAMPLE_ID)
-                    loadHome(SAMPLE_ID)
-                  }}
-                >
-                  Khách hàng mẫu
-                </Text>
+                {SAMPLE_IDS.map((id, i) => (
+                  <Text
+                    key={id}
+                    size="xs"
+                    className="link-hover"
+                    style={{ cursor: 'pointer', color: '#000', fontWeight: 700 }}
+                    onClick={() => {
+                      setCustomerId(id)
+                      loadHome(id)
+                    }}
+                  >
+                    Khách {i + 1}
+                  </Text>
+                ))}
                 <Text size="xs" style={{ color: '#000' }}>
                   /
                 </Text>
@@ -299,7 +308,7 @@ export default function App() {
                   style={{ cursor: 'pointer', color: '#000', fontWeight: 700 }}
                   onClick={() => loadHome('new_user_demo')}
                 >
-                  Khách hàng mới (fallback trending)
+                  Khách hàng mới (fallback)
                 </Text>
               </Group>
 

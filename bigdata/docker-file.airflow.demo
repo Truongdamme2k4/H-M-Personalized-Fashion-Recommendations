@@ -1,0 +1,32 @@
+# Airflow image cho demo: cài đặt mọi dependency cần để chạy pipeline recsys.
+# Bao gồm spark provider (cho SparkSubmitOperator) + pyspark (để spark-submit binary có sẵn)
+# + lightgbm/pandas/pymongo cho stage train/predict/export.
+
+FROM apache/airflow:2.10.4-python3.12
+
+USER root
+
+# Cần Java cho spark-submit (Spark 3.5 hỗ trợ Java 17)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openjdk-17-jre-headless libgomp1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Debian apt installs JDK ở đường dẫn amd64, không phải arm64
+# Tạo symlink để JAVA_HOME đúng cho cả hai kiến trúc
+RUN ln -sf /usr/lib/jvm/java-17-openjdk-amd64 /usr/lib/jvm/java-17-openjdk-arm64 || true
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+USER airflow
+
+RUN pip install --no-cache-dir \
+    apache-airflow-providers-apache-spark==4.7.1 \
+    pyspark==3.5.6 \
+    pymongo==4.6.1 \
+    lightgbm==4.1.0 \
+    pandas==2.1.4 \
+    pyarrow==14.0.2 \
+    numpy==1.26.3 \
+    boto3==1.34.34 \
+    psycopg2-binary==2.9.9

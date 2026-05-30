@@ -1,0 +1,200 @@
+# Compose phiên bản gọn (single-node, không Hadoop) để demo Airflow + Spark + Mongo.
+# Data nằm trên local volume project/data, các container đều mount cùng path.
+# Đầy đủ cho việc trigger DAG recsys_pipeline_v1 từ Airflow UI.
+#
+# Kiến trúc:
+#   CSV → oltp-postgres → (Spark JDBC) → MinIO (bronze/silver/gold) → MongoDB
+#
+# Usage:
+#   docker compose -f bigdata/docker-compose.yml up -d --build
+#   open http://localhost:8082   (Airflow, admin/admin)
+#   open http://localhost:8080   (Spark Master UI)
+#   open http://localhost:9001   (MinIO Console, minioadmin/minioadmin)
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    networks: [bigdata]
+
+  oltp-postgres:
+    image: postgres:15
+    hostname: oltp-postgres
+    environment:
+      POSTGRES_USER: hm
+      POSTGRES_PASSWORD: hm
+      POSTGRES_DB: hm_oltp
+    ports:
+      - "5433:5432"
+    volumes:
+      - oltp-data:/var/lib/postgresql/data
+      - ./oltp_init:/docker-entrypoint-initdb.d:ro
+      - ../data/raw:/seed:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "hm", "-d", "hm_oltp"]
+      interval: 5s
+      retries: 20
+    networks: [bigdata]
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    hostname: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks: [bigdata]
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-01-16T16-06-34Z
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 2; done &&
+      mc mb -p local/datalake &&
+      mc anonymous set download local/datalake &&
+      echo 'MinIO bucket datalake ready.'
+      "
+    networks: [bigdata]
+
+  mongodb:
+    image: mongo:6.0
+    hostname: mongodb
+    environment:
+      MONGO_INITDB_DATABASE: hm_recsys
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks: [bigdata]
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    depends_on: [mongodb]
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: "27017"
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+      ME_CONFIG_OPTIONS_EDITORTHEME: ambiance
+    ports:
+      - "8083:8081"
+    networks: [bigdata]
+
+  spark-master:
+    image: bitnamilegacy/spark:3.5
+    hostname: spark-master
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      SPARK_USER: spark
+    ports:
+      - "8080:8080"   # Master UI
+      - "7077:7077"   # Master RPC
+    volumes:
+      - ./apps:/opt/spark-apps
+      - ../data:/workspace/data
+      - spark-ivy:/opt/bitnami/spark/.ivy2
+    networks: [bigdata]
+
+  spark-worker:
+    image: bitnamilegacy/spark:3.5
+    depends_on: [spark-master]
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 4G
+      SPARK_WORKER_CORES: 4
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      SPARK_USER: spark
+    ports:
+      - "8081:8081"   # Worker UI
+    volumes:
+      - ./apps:/opt/spark-apps
+      - ../data:/workspace/data
+      - spark-ivy:/opt/bitnami/spark/.ivy2
+    networks: [bigdata]
+
+  airflow:
+    build:
+      context: .
+      dockerfile: docker-file.airflow.demo
+    image: airflow-recsys:demo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      spark-master:
+        condition: service_started
+      mongodb:
+        condition: service_started
+      oltp-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth
+      AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type":"spark","host":"spark://spark-master","port":7077}'
+      MONGO_URI: mongodb://mongodb:27017
+      MONGO_DB: hm_recsys
+      # Data lake: s3a:// trỏ vào MinIO
+      DATALAKE_BASE: s3a://datalake
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      # OLTP JDBC
+      OLTP_JDBC_URL: jdbc:postgresql://oltp-postgres:5432/hm_oltp
+      OLTP_JDBC_USER: hm
+      OLTP_JDBC_PASSWORD: hm
+      PYTHONPATH: /opt/spark-apps
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./apps:/opt/spark-apps
+      - ./logs:/opt/airflow/logs
+      - ../data:/workspace/data
+    command: bash -c "
+        airflow db migrate &&
+        (airflow users create --username admin --password admin --firstname admin --lastname admin --role Admin --email admin@example.com || true) &&
+        (airflow scheduler &) &&
+        exec airflow webserver
+      "
+    networks: [bigdata]
+
+networks:
+  bigdata:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  oltp-data:
+  mongo-data:
+  minio-data:
+  spark-ivy:
