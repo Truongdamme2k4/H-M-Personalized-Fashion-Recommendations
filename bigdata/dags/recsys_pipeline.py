@@ -5,7 +5,6 @@ Luồng:
   wait_oltp_ready
    → extract_oltp_to_minio   (Spark JDBC → MinIO bronze)
    → step1_cleaning          (bronze → silver)
-   → [7 candidate jobs song song] → union_master
    → feature_label → train_lightgbm → predict_lightgbm
    → export_to_mongo → notify
 
@@ -21,6 +20,7 @@ from airflow.sensors.python import PythonSensor
 
 APPS = "/opt/spark-apps"
 SPARK_CONN = "spark_default"
+DATALAKE_BASE = os.environ.get("DATALAKE_BASE", "s3a://datalake")
 
 # Env truyền xuống Spark driver/executor — datalake + OLTP config
 _PASS_ENV = [
@@ -132,11 +132,30 @@ with DAG(
         application=f"{APPS}/candidate_itemcf.py", **common_spark_args)
     cand_categorical = SparkSubmitOperator(task_id="cand_categorical",
         application=f"{APPS}/candidate_categorical.py", **common_spark_args)
-    cand_fpgrowth    = SparkSubmitOperator(task_id="cand_fpgrowth",
-        application=f"{APPS}/candidate_fpgrowth.py", **common_spark_args)
+
+    # Cart FPGrowth — item-to-item co-purchase (như notebook, không qua union)
+    # Sinh cart_recommendations.json → upload lên MinIO gold
+    export_cart_fpgrowth = SparkSubmitOperator(
+        task_id="export_cart_fpgrowth",
+        application=f"{APPS}/candidate_fpgrowth.py",
+        conn_id=SPARK_CONN,
+        conf=SPARK_EXECUTOR_CONF,
+        env_vars={
+            **SPARK_ENV_VARS,
+            "CART_REC_PATH": f"{DATALAKE_BASE}/gold/predictions/cart_recommendations.json",
+            "PYTHONPATH": APPS,
+        },
+        py_files=f"{APPS}/common.py",
+        verbose=True,
+        application_args=[
+            "--run_date", "2020-09-22",
+            "--cart_only",
+            "--output_json", "/tmp/cart_recommendations.json",
+        ],
+    )
 
     candidates = [cand_repurchase, cand_popularity, cand_sibling,
-                  cand_als, cand_itemcf, cand_categorical, cand_fpgrowth]
+                  cand_als, cand_itemcf, cand_categorical]
 
     union = SparkSubmitOperator(
         task_id="union_master",
@@ -157,7 +176,11 @@ with DAG(
     )
     export_mongo = BashOperator(
         task_id="export_to_mongo",
-        bash_command=f"cd {APPS} && python export_to_mongo.py --run_date 2020-09-22",
+        bash_command=(
+            f"cd {APPS} && "
+            f"CART_REC_PATH={DATALAKE_BASE}/gold/predictions/cart_recommendations.json "
+            f"python export_to_mongo.py --run_date 2020-09-22"
+        ),
     )
 
     notify = PythonOperator(
@@ -170,4 +193,7 @@ with DAG(
     wait_oltp >> extract_oltp >> step1_clean >> candidates
     for c in candidates:
         c >> union
+    # Cart FPGrowth: đợi step1_clean xong, chạy song song với union/ranking
+    step1_clean >> export_cart_fpgrowth
+    export_cart_fpgrowth >> export_mongo
     union >> feat_label >> train_lgbm >> predict_lgbm >> export_mongo >> notify

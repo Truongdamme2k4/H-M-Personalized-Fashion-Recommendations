@@ -11,7 +11,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends openjdk-17-jre-headless libgomp1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
+# Debian apt installs JDK ở đường dẫn amd64, không phải arm64
+# Tạo symlink để JAVA_HOME đúng cho cả hai kiến trúc
+RUN ln -sf /usr/lib/jvm/java-17-openjdk-amd64 /usr/lib/jvm/java-17-openjdk-arm64 || true
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 USER airflow

@@ -89,6 +89,23 @@ def main(run_date: str | None):
         "global_count": len(global_top),
         "age_groups": list(age_top.keys()),
     })
+
+    # Cart recommendations (từ FPGrowth — item-to-item co-purchase, không qua union)
+    cart_path = os.environ.get("CART_REC_PATH", None)
+    if cart_path:
+        local_cart = s3a_to_local(cart_path, "/tmp/exp_cart")
+        with open(local_cart) as f:
+            cart_data = json.load(f)
+
+        cart_coll = db["cart_recommendations"]
+        cart_ops = [
+            UpdateOne({"_id": aid}, {"$set": {"items": items}}, upsert=True)
+            for aid, items in cart_data.items()
+        ]
+        if cart_ops:
+            cart_coll.bulk_write(cart_ops, ordered=False)
+        print(f"  cart_recommendations: {len(cart_data):,} articles")
+
     client.close()
     print("Export to Mongo done.")
 
