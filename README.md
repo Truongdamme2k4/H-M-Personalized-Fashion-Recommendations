@@ -18,7 +18,7 @@ CSV ──► PostgreSQL ──► MinIO (bronze → silver → gold) ──► 
         (OLTP)         Spark + LightGBM (Airflow)         (serving)    (web)
 ```
 
-### 7 nguồn ứng viên
+### 6 nguồn ứng viên
 
 | Strategy | Bắt pattern gì |
 |---|---|
@@ -28,7 +28,6 @@ CSV ──► PostgreSQL ──► MinIO (bronze → silver → gold) ──► 
 | ALS (Spark MLlib) | Latent user/item factor |
 | ItemCF | Co-occurrence + cosine similarity |
 | Categorical | Gu (gender × group × colour) |
-| FP-Growth (Spark MLlib) | Association rules support/confidence |
 
 ### Stack
 
@@ -234,7 +233,7 @@ wait_oltp_ready (Postgres sensor)
 │   ├── oltp_init/                 # SQL bootstrap cho OLTP Postgres
 │   └── notebooks/data/            # Notebook process_{articles,customer,transactions}
 ├── notebooks/                     # Notebook gốc trên Colab (research version)
-│   ├── candidates/                # 7 nguồn ứng viên
+│   ├── candidates/                # 6 nguồn ứng viên
 │   └── models/                    # LightGBM, FPGrowth, CLIP
 ├── backend/                       # Node.js Express API
 │   └── src/
